@@ -41,11 +41,19 @@ typedef struct nes_video_output
     uint8_t     emphasize_blue  : 1;
 } nes_video_output;
 
+typedef struct nes_audio_output
+{
+    int16_t*    samples;
+    uint32_t    sample_count;
+    uint32_t    sample_rate;
+} nes_audio_output;
+
 typedef struct nes_config
 {
     void*                client_data;
     nes_controller_state (*input_callback)(int controller_id, void* client_data);
     void                 (*video_callback)(nes_video_output* video_output, void* client_data);
+    void                 (*audio_callback)(nes_audio_output* audio_output, void* client_data);
 } nes_config;
 
 typedef struct nes_system nes_system;

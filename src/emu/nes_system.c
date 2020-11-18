@@ -2,6 +2,7 @@
 #include "nes_system.h"
 #include "nes_rom.h"
 #include "nes_ppu.h"
+#include "nes_apu.h"
 #include "emu6502.h"
 
 // todo:
@@ -17,6 +18,7 @@ struct nes_system
     nes_mapper*     mapper;
     cpu_state       cpu;
     nes_ppu         ppu;
+    nes_apu         apu;
     int             own_cartridge;
     int             cpu_odd_cycle;
     int             dma;
@@ -54,6 +56,7 @@ void nes_system_destroy(nes_system* system)
 void nes_system_reset(nes_system* system)
 {
     nes_ppu_reset(&system->ppu);
+    nes_apu_reset(&system->apu);
     system->cpu = cpu_reset();
     system->cpu_odd_cycle = 0;
     system->dma = 0;
@@ -183,7 +186,6 @@ void dma_execute(nes_system* system)
     else if (cur == 514)
     {
         system->dma = 0;
-        system->cpu_odd_cycle = 1;
     }
 }
 
@@ -211,10 +213,16 @@ void cpu_rw_bus(nes_system* system)
                 }
                 else
                 {
-                    if (system->cpu.address == 0x4016)
+                    switch (system->cpu.address)
                     {
-                        system->cpu.data = (system->controller_input0 >> 7) & 1;
-                        system->controller_input0 = (system->controller_input0 << 1) | 1;
+                        case 0x4016: // Controller 0
+                        {
+                            system->cpu.data = (system->controller_input0 >> 7) & 1;
+                            system->controller_input0 = (system->controller_input0 << 1) | 1;
+                        }
+                        break;
+                        case 0x4015: // APU Status
+                        break;
                     }
                 }
             }
@@ -242,22 +250,38 @@ void cpu_rw_bus(nes_system* system)
                 }
                 else
                 {
-                    if (system->cpu.address == 0x4014)
+                    switch (system->cpu.address)
                     {
-                        dma_init(system, system->cpu.data, system->ppu.oam_address);
-                    }
-                    else if (system->cpu.address == 0x4016)
-                    {
-                        if (system->cpu.data == 1)
+                        case 0x4014:
                         {
-                            system->controller_input0 = 0;
-                            system->controller_input1 = 0;
+                            dma_init(system, system->cpu.data, system->ppu.oam_address);
                         }
-                        else
+                        break;
+                        case 0x4016:
                         {
-                            nes_controller_state state = system->config.input_callback(0, system->config.client_data);
-                            memcpy(&system->controller_input0, &state, 1);
+                            if (system->cpu.data == 1)
+                            {
+                                system->controller_input0 = 0;
+                                system->controller_input1 = 0;
+                            }
+                            else
+                            {
+                                nes_controller_state state = system->config.input_callback(0, system->config.client_data);
+                                memcpy(&system->controller_input0, &state, 1);
+                            }
                         }
+                        break;
+                        // APU
+                        case 0x4000: case 0x4001: case 0x4002: case 0x4003: // Pulse 1
+                        case 0x4004: case 0x4005: case 0x4006: case 0x4007: // Pulse 2
+                        case 0x4015: // Status 
+                        case 0x4017: // Frame counter
+                        {
+                            system->apu.reg_rw_mode = NES_APU_REG_RW_MODE_WRITE;
+                            system->apu.reg_addr = system->cpu.address;
+                            system->apu.reg_data = system->cpu.data;
+                        }
+                        break;
                     }
                 }
             }
@@ -270,7 +294,22 @@ void cpu_tick(nes_system* system)
     system->cpu = cpu_execute(system->cpu);
 
     cpu_rw_bus(system);
-    system->cpu_odd_cycle ^= 1; 
+}
+
+void apu_tick(nes_system* system)
+{
+    nes_apu_execute(&system->apu);
+
+    if (system->apu.sample_count == 29781)
+    {
+        nes_audio_output audio;
+        audio.samples = system->apu.samples;
+        audio.sample_count = system->apu.sample_count;
+        audio.sample_rate = 1789773;
+
+        system->config.audio_callback(&audio, system->config.client_data);
+        system->apu.sample_count = 0;
+    }
 }
 
 void nes_system_tick(nes_system* system)
@@ -291,6 +330,8 @@ void nes_system_tick(nes_system* system)
     if (!had_vbl && system->ppu.vbl)
         system->cpu.nmi = 1;
 
+    apu_tick(system);
+
     if (system->dma)
     {
         dma_execute(system);
@@ -299,6 +340,8 @@ void nes_system_tick(nes_system* system)
     {
         cpu_tick(system);
     }
+    
+    system->cpu_odd_cycle ^= 1; 
 }
 
 void nes_system_frame(nes_system* system)

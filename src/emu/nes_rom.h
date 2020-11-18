@@ -139,7 +139,7 @@ nes_cartridge* nes_rom_load_cartridge(const char* path)
             fseek(rom_file, 0, SEEK_SET);
 
             rom_file_data = malloc(rom_file_size);
-            fread(rom_file_data, rom_file_size, 1, rom_file);
+            int r = fread(rom_file_data, rom_file_size, 1, rom_file);
 
             cartridge = nes_rom_create_cartridge(rom_file_data, rom_file_size, format);
             free(rom_file_data);
