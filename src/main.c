@@ -173,10 +173,13 @@ void on_nes_audio(nes_audio_output* audio, void* client)
     float increment_rate = 44100.0f / (float)audio->sample_rate;
 
     float diff = fabsf(target_latency - latency_avg);
-    if (latency_avg < target_latency)
-        increment_rate += diff / 44100.0f;
-    else
-        increment_rate -= diff / 44100.0f;
+    if (diff > 3.0f)
+    {
+        if (latency_avg < target_latency)
+            increment_rate += diff / 44100.0f;
+        else
+            increment_rate -= diff / 44100.0f;
+    }
 
     for (uint32_t src = 0; src < audio->sample_count; ++src)
     {

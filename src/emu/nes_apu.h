@@ -15,6 +15,10 @@
 #define NES_APU_PULSE2_REG2_ID          0x4006
 #define NES_APU_PULSE2_REG3_ID          0x4007
 
+#define NES_APU_TRIANGLE_REG0_ID        0x4008
+#define NES_APU_TRIANGLE_REG1_ID        0x400A
+#define NES_APU_TRIANGLE_REG2_ID        0x400B
+
 #define NES_APU_NOISE_REG0_ID           0x400C
 #define NES_APU_NOISE_REG1_ID           0x400E
 #define NES_APU_NOISE_REG2_ID           0x400F
@@ -56,6 +60,23 @@ typedef struct nes_apu_pulse
     uint8_t     volume;
     uint16_t    output;
 } nes_apu_pulse;
+
+typedef struct nes_apu_triangle
+{
+    union
+    {
+        uint8_t     control_flag : 1;
+        uint8_t     length_counter_halt : 1;
+    };
+    uint8_t     linear_counter_reload : 1;
+    uint16_t    timer;
+    uint16_t    t;
+    uint8_t     linear_counter;
+    uint8_t     linear_counter_reload_value;
+    uint8_t     length_counter;
+    uint8_t     sequencer;
+    uint16_t    output;
+} nes_apu_triangle;
 
 typedef struct nes_apu_noise
 {
@@ -101,8 +122,9 @@ typedef struct nes_apu
         uint8_t b;
     } channel_enable;
 
-    nes_apu_pulse pulse[2];
-    nes_apu_noise noise;
+    nes_apu_pulse       pulse[2];
+    nes_apu_triangle    triangle;
+    nes_apu_noise       noise;
 
     int16_t     samples[44100];
     uint32_t    sample_count;
@@ -142,6 +164,9 @@ void nes_apu_execute(nes_apu* apu)
 
                     if (apu->channel_enable.pulse2 == 0)
                         apu->pulse[1].length_counter = 0;
+
+                    if (apu->channel_enable.triangle == 0)
+                        apu->triangle.length_counter = 0;
 
                     if (apu->channel_enable.noise == 0)
                         apu->noise.length_counter = 0;
@@ -198,6 +223,24 @@ void nes_apu_execute(nes_apu* apu)
                 update_sweep_target_period(apu, i);
             }
             break;
+            case NES_APU_TRIANGLE_REG0_ID:
+            {
+                apu->triangle.control_flag = (apu->reg_data >> 7);
+                apu->triangle.linear_counter_reload_value = (apu->reg_data & 0x7F);
+            }
+            break;
+            case NES_APU_TRIANGLE_REG1_ID:
+            {
+                apu->triangle.timer = (apu->triangle.timer & 0xFF00) | apu->reg_data;
+            }
+            break;
+            case NES_APU_TRIANGLE_REG2_ID:
+            {
+                apu->triangle.timer = (((uint16_t)apu->reg_data & 7) << 8) | (apu->triangle.timer & 0xFF);
+                apu->triangle.length_counter = lengths[apu->reg_data >> 3];
+                apu->triangle.linear_counter_reload = 1;
+            }
+            break;
             case NES_APU_NOISE_REG0_ID:
             {
                 apu->noise.length_counter_halt = (apu->reg_data >> 5) & 1; // alias env_loop
@@ -221,8 +264,6 @@ void nes_apu_execute(nes_apu* apu)
         }
         apu->reg_rw_mode = NES_APU_REG_RW_MODE_NONE;
     }
-
-    // Update triangle channel
 
     if (apu->odd_cycle == 1)
     {
@@ -259,9 +300,19 @@ void nes_apu_execute(nes_apu* apu)
             }
         }
 
-        // Clock triangle's linear counter
-        if (update_quarter)
+        // Clock triangle's linear and length counters
+        if (apu->channel_enable.triangle)
         {
+            if (update_quarter)
+            {
+                if (apu->triangle.linear_counter_reload) apu->triangle.linear_counter = apu->triangle.linear_counter_reload_value;
+                else if (apu->triangle.linear_counter) apu->triangle.linear_counter--;
+
+                apu->triangle.linear_counter_reload &= apu->triangle.control_flag;
+            }
+
+            if (update_half)
+                apu->triangle.length_counter -= apu->triangle.length_counter_halt ^ 1;
         }
 
         // Update pulse channels
@@ -387,12 +438,33 @@ void nes_apu_execute(nes_apu* apu)
             apu->cycle = 0;
         }
     }
+
+    // Update triangle channel
+    if (apu->channel_enable.triangle)
+    {
+        if (apu->triangle.t-- == 0)
+        {
+            apu->triangle.t = apu->triangle.timer;
+
+            if (apu->triangle.length_counter && apu->triangle.linear_counter)
+            {
+                apu->triangle.output = (apu->triangle.timer > 1) * 
+                    ((apu->triangle.sequencer < 16) ? -(apu->triangle.sequencer - 15) : apu->triangle.sequencer - 16);
+                apu->triangle.sequencer = (apu->triangle.sequencer + 1) % 32;
+            }
+        }
+    }
+    else
+    {
+        apu->triangle.output = 0;
+    }
+
     apu->odd_cycle ^= 1;
     
     // dummy mixing
     {
         uint64_t pulse_out = (apu->pulse[0].output + apu->pulse[1].output) * 32298154ULL; 
-        uint64_t tnd_out = apu->noise.output * 21217138ULL;
+        uint64_t tnd_out = apu->triangle.output * 36550171ULL + apu->noise.output * 21217138ULL;
 
         // dividing by 42949672ULL results in output in rage 0-100
         apu->samples[apu->sample_count++] = ((pulse_out + tnd_out)/42949672ULL) * 500;

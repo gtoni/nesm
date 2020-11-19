@@ -274,6 +274,7 @@ void cpu_rw_bus(nes_system* system)
                         // APU
                         case 0x4000: case 0x4001: case 0x4002: case 0x4003: // Pulse 1
                         case 0x4004: case 0x4005: case 0x4006: case 0x4007: // Pulse 2
+                        case 0x4008: case 0x400A: case 0x400B: // Triangle
                         case 0x400C: case 0x400E: case 0x400F: // Noise
                         case 0x4015: // Status 
                         case 0x4017: // Frame counter
