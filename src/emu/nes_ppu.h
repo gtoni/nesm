@@ -151,9 +151,9 @@ typedef struct nes_ppu
     uint8_t         eval_oam_m;
     uint8_t         eval_oam_n;
     uint8_t         eval_oam_entry[4];
-    uint8_t         eval_oam_sprite_zero;
+    uint8_t         eval_oam_has_sprite_zero;
 
-    uint8_t         sprite_zero_id;
+    uint8_t         sprite_0_test;
     uint8_t         cpu_read_buffer;
     int             update_cpu_read_buffer;
 
@@ -414,8 +414,6 @@ void nes_ppu_execute(nes_ppu* __restrict ppu)
 
             if ((ppu->render_mask & NES_PPU_RENDER_MASK_SPRITES))
             {
-                unsigned sprite_select = 0xFF;
-                unsigned hit_candidate = 0;
                 unsigned x = ppu->dot - 2;
 
                 for (int i = 0; i < 8; ++i)
@@ -426,23 +424,19 @@ void nes_ppu_execute(nes_ppu* __restrict ppu)
                         unsigned pattern = (((ppu->sprite_shift_high[i] >> sprite_shift) << 1) & 2) |
                                            ((ppu->sprite_shift_low[i] >> sprite_shift) & 1);
 
-                        unsigned replace_pixel = pattern & sprite_select;
                         
-                        if (bg_pattern)
+                        if (pattern)
                         {
-                            hit_candidate |= (pattern && i == ppu->sprite_zero_id);
-                            replace_pixel &= ~(ppu->sprite_attributes[i].priority * 0xFF);
-                        }
+                            if (i == 0 && ppu->sprite_0_test)
+                                ppu->status.sprite_0_hit = ppu->primary_oam.entries[0].position_y < 240;
 
-                        if (replace_pixel)
-                        {
-                            sprite_select = 0;
-                            palette_index = pattern | (ppu->sprite_attributes[i].palette << 2) | 0x10;
+                            if (bg_pattern == 0 || (ppu->sprite_attributes[i].priority == 0))
+                                palette_index = pattern | (ppu->sprite_attributes[i].palette << 2) | 0x10;
+
+                            break;
                         }
                     }
                 }
-                if (hit_candidate & ~ppu->status.sprite_0_hit)
-                    ppu->status.sprite_0_hit = ppu->dot && ppu->primary_oam.entries[0].position_y < 240;
             }
 
             ppu->color_out = ppu->palettes[palette_index];
@@ -549,7 +543,7 @@ void nes_ppu_execute(nes_ppu* __restrict ppu)
                 ppu->eval_oam_free_index = 0;
                 ppu->eval_oam_m = 0;
                 ppu->eval_oam_n = 0;
-                ppu->eval_oam_sprite_zero = 0xFF;
+                ppu->eval_oam_has_sprite_zero = 0;
             }
 
             // Sprite evaluation
@@ -580,7 +574,7 @@ void nes_ppu_execute(nes_ppu* __restrict ppu)
                             if (has_free_slots)
                             {
                                 if (ppu->oam_address == 4)
-                                    ppu->eval_oam_sprite_zero = ppu->eval_oam_free_index;
+                                    ppu->eval_oam_has_sprite_zero = 1;
 
                                 // add primary oam to seconday oam if it's in scanline range
                                 memcpy(ppu->secondary_oam.entries + ppu->eval_oam_free_index, ppu->eval_oam_entry, sizeof(nes_ppu_oam_entry));
@@ -615,7 +609,7 @@ void nes_ppu_execute(nes_ppu* __restrict ppu)
                 nes_ppu_oam_entry   current_oam = ppu->secondary_oam.entries[current_oam_index];
 
                 ppu->oam_address = 0;
-                ppu->sprite_zero_id = ppu->eval_oam_sprite_zero;
+                ppu->sprite_0_test = ppu->eval_oam_has_sprite_zero;
 
                 switch(ppu->dot & 7)
                 {
