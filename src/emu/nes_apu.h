@@ -171,6 +171,13 @@ void nes_apu_execute(nes_apu* apu)
                     if (apu->channel_enable.noise == 0)
                         apu->noise.length_counter = 0;
                 }
+                else
+                {
+                    apu->reg_data = (apu->pulse[0].length_counter > 0) |
+                                   ((apu->pulse[1].length_counter > 0) << 1) |
+                                   ((apu->triangle.length_counter > 0) << 2) |
+                                   ((apu->noise.length_counter > 0) << 3);
+                }
             }
             break;
             case NES_APU_FRAME_COUNTER_REG_ID:
