@@ -222,6 +222,10 @@ void cpu_rw_bus(nes_system* system)
                         }
                         break;
                         case 0x4015: // APU Status
+                        {
+                            system->apu.reg_rw_mode = NES_APU_REG_RW_MODE_READ;
+                            system->apu.reg_addr = 0x4015;
+                        }
                         break;
                     }
                 }
@@ -301,6 +305,11 @@ void cpu_tick(nes_system* system)
 void apu_tick(nes_system* system)
 {
     nes_apu_execute(&system->apu);
+
+    if (system->cpu.rw_mode == CPU_RW_MODE_READ && system->cpu.address == 0x4015)
+    {
+        system->cpu.data = system->apu.reg_data;
+    }
 
     if (system->apu.sample_count == 29781)
     {

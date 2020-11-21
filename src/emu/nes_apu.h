@@ -223,8 +223,10 @@ void nes_apu_execute(nes_apu* apu)
             case NES_APU_PULSE2_REG3_ID:
             {
                 unsigned i = (apu->reg_addr >> 2) & 1;
+                if (apu->channel_enable.b & (i + 1))
+                    apu->pulse[i].length_counter = lengths[apu->reg_data >> 3];
+
                 apu->pulse[i].timer = (((uint16_t)apu->reg_data & 7) << 8) | (apu->pulse[i].timer & 0xFF);
-                apu->pulse[i].length_counter = lengths[apu->reg_data >> 3];
                 apu->pulse[i].sequencer = 0;
                 apu->pulse[i].env_start = 1;
                 update_sweep_target_period(apu, i);
@@ -243,8 +245,10 @@ void nes_apu_execute(nes_apu* apu)
             break;
             case NES_APU_TRIANGLE_REG2_ID:
             {
+                if (apu->channel_enable.triangle)
+                    apu->triangle.length_counter = lengths[apu->reg_data >> 3];
+
                 apu->triangle.timer = (((uint16_t)apu->reg_data & 7) << 8) | (apu->triangle.timer & 0xFF);
-                apu->triangle.length_counter = lengths[apu->reg_data >> 3];
                 apu->triangle.linear_counter_reload = 1;
             }
             break;
@@ -264,7 +268,9 @@ void nes_apu_execute(nes_apu* apu)
             break;
             case NES_APU_NOISE_REG2_ID:
             {
-                apu->noise.length_counter = lengths[apu->reg_data >> 3];
+                if (apu->channel_enable.noise)
+                    apu->noise.length_counter = lengths[apu->reg_data >> 3];
+
                 apu->noise.env_start = 1;
             }
             break;
@@ -281,8 +287,7 @@ void nes_apu_execute(nes_apu* apu)
         {
             apu->sequencer_reset_req = 0;
             apu->cycle = 0;
-            update_half = 1;
-            update_quarter = 1;
+            update_half = update_quarter = apu->sequencer_mode;
         }
 
         // Update frame sequencer (odd) on n + 0.5 cycles
@@ -318,14 +323,14 @@ void nes_apu_execute(nes_apu* apu)
                 apu->triangle.linear_counter_reload &= apu->triangle.control_flag;
             }
 
-            if (update_half)
+            if (update_half && apu->triangle.length_counter)
                 apu->triangle.length_counter -= apu->triangle.length_counter_halt ^ 1;
         }
 
         // Update pulse channels
         for (int i = 0; i < 2; ++i)
         {
-            if ((apu->channel_enable.b & (i + 1)) && apu->pulse[i].length_counter && apu->pulse[i].timer >= 8)
+            if ((apu->channel_enable.b & (i + 1)) && apu->pulse[i].length_counter)
             {
                 // Update envelope
                 if (update_quarter)
@@ -375,10 +380,17 @@ void nes_apu_execute(nes_apu* apu)
                     apu->pulse[i].sequencer = (apu->pulse[i].sequencer - 1) & 7;
                 }
 
-                if (apu->pulse[i].constant_volume)
-                    apu->pulse[i].output = (apu->pulse[i].sequence_output & (apu->pulse[i].sweep_target_period < 0x800)) * apu->pulse[i].volume;
+                if (apu->pulse[i].timer >= 8)
+                {
+                    if (apu->pulse[i].constant_volume)
+                        apu->pulse[i].output = (apu->pulse[i].sequence_output & (apu->pulse[i].sweep_target_period < 0x800)) * apu->pulse[i].volume;
+                    else
+                        apu->pulse[i].output = (apu->pulse[i].sequence_output & (apu->pulse[i].sweep_target_period < 0x800)) * apu->pulse[i].env_counter;
+                }
                 else
-                    apu->pulse[i].output = (apu->pulse[i].sequence_output & (apu->pulse[i].sweep_target_period < 0x800)) * apu->pulse[i].env_counter;
+                {
+                    apu->pulse[i].output = 0;
+                }
             }
             else
             {
@@ -460,10 +472,6 @@ void nes_apu_execute(nes_apu* apu)
                 apu->triangle.sequencer = (apu->triangle.sequencer + 1) % 32;
             }
         }
-    }
-    else
-    {
-        apu->triangle.output = 0;
     }
 
     apu->odd_cycle ^= 1;
