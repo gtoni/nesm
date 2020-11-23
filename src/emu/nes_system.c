@@ -295,21 +295,9 @@ void cpu_rw_bus(nes_system* system)
     }
 }
 
-void cpu_tick(nes_system* system)
-{
-    system->cpu = cpu_execute(system->cpu);
-
-    cpu_rw_bus(system);
-}
-
 void apu_tick(nes_system* system)
 {
     nes_apu_execute(&system->apu);
-
-    if (system->cpu.rw_mode == CPU_RW_MODE_READ && system->cpu.address == 0x4015)
-    {
-        system->cpu.data = system->apu.reg_data;
-    }
 
     if (system->apu.sample_count == 29781)
     {
@@ -321,6 +309,13 @@ void apu_tick(nes_system* system)
         system->config.audio_callback(&audio, system->config.client_data);
         system->apu.sample_count = 0;
     }
+}
+
+void cpu_tick(nes_system* system)
+{
+    system->cpu = cpu_execute(system->cpu);
+
+    cpu_rw_bus(system);
 }
 
 void nes_system_tick(nes_system* system)
@@ -342,6 +337,14 @@ void nes_system_tick(nes_system* system)
         system->cpu.nmi = 1;
 
     apu_tick(system);
+
+    // Transfer data from APU to CPU
+    if (system->cpu.rw_mode == CPU_RW_MODE_READ && system->cpu.address == 0x4015)
+    {
+        system->cpu.data = system->apu.reg_data;
+    }
+
+    system->cpu.irq = system->apu.frame_interrupt;
 
     if (system->dma)
     {

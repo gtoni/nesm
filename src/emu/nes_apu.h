@@ -105,7 +105,7 @@ typedef struct nes_apu
     uint8_t     reg_data;
 
     uint8_t     sequencer_mode : 1;
-    uint8_t     sequencer_reset_req : 1;
+    uint8_t     sequencer_reset_req : 3;
     uint8_t     inhibit_interrupt : 1;
     uint8_t     frame_interrupt : 1;
 
@@ -128,9 +128,7 @@ typedef struct nes_apu
 
     int16_t     samples[44100];
     uint32_t    sample_count;
-    uint32_t    sample_cycle;
 
-    int         odd_cycle;
     uint32_t    cycle;
 } nes_apu;
 
@@ -150,6 +148,7 @@ void nes_apu_execute(nes_apu* apu)
 {
     const uint8_t lengths[] = { 10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30 };
 
+    // I/O
     if (apu->reg_rw_mode)
     {
         switch (apu->reg_addr)
@@ -176,7 +175,10 @@ void nes_apu_execute(nes_apu* apu)
                     apu->reg_data = (apu->pulse[0].length_counter > 0) |
                                    ((apu->pulse[1].length_counter > 0) << 1) |
                                    ((apu->triangle.length_counter > 0) << 2) |
-                                   ((apu->noise.length_counter > 0) << 3);
+                                   ((apu->noise.length_counter > 0) << 3) |
+                                   (apu->frame_interrupt << 6);
+
+                    apu->frame_interrupt = apu->sequencer_mode == 0 && (apu->cycle >= 29828 && apu->cycle <= 29830);
                 }
             }
             break;
@@ -186,7 +188,7 @@ void nes_apu_execute(nes_apu* apu)
                 apu->inhibit_interrupt = (apu->reg_data >> 6) & 1;
                 if (apu->inhibit_interrupt)
                     apu->frame_interrupt = 0;
-                apu->sequencer_reset_req = 1;
+                apu->sequencer_reset_req = 4 - ((~apu->cycle) & 1);
             }
             break;
             case NES_APU_PULSE1_REG0_ID:
@@ -278,62 +280,58 @@ void nes_apu_execute(nes_apu* apu)
         apu->reg_rw_mode = NES_APU_REG_RW_MODE_NONE;
     }
 
-    if (apu->odd_cycle == 1)
+    // Update frame sequencer
     {
         unsigned update_quarter = 0;
         unsigned update_half = 0;
 
         if (apu->sequencer_reset_req)
         {
-            apu->sequencer_reset_req = 0;
-            apu->cycle = 0;
-            update_half = update_quarter = apu->sequencer_mode;
+            if (--apu->sequencer_reset_req == 0)
+            {
+                apu->cycle = 0;
+                update_half = update_quarter = apu->sequencer_mode;
+            }
         }
 
-        // Update frame sequencer (odd) on n + 0.5 cycles
         if (apu->sequencer_mode == 0)
         {
             switch(apu->cycle)
             {
-                case 3728:  update_quarter = 1; break;
-                case 7456:  update_quarter = 1; update_half = 1; break;
-                case 11185: update_quarter = 1; break;
-                case 14914: update_quarter = 1; update_half = 1; apu->frame_interrupt = (apu->inhibit_interrupt == 0); break;
+                case 7457:  update_quarter = 1; break;
+                case 14913: update_quarter = 1; update_half = 1; break;
+                case 22371: update_quarter = 1; break;
+                case 29828:
+                    apu->frame_interrupt = (apu->inhibit_interrupt == 0);
+                    break;
+                case 29829:
+                    update_quarter = 1; update_half = 1;
+                    apu->frame_interrupt = (apu->inhibit_interrupt == 0);
+                    break;
+                case 29830:
+                    apu->cycle = 0;
+                    apu->frame_interrupt = (apu->inhibit_interrupt == 0);
+                    break;
             }
         }
         else
         {
             switch(apu->cycle)
             {
-                case 3728:  update_quarter = 1; break;
-                case 7456:  update_quarter = 1; update_half = 1; break;
-                case 11185: update_quarter = 1; break;
-                case 18640: update_quarter = 1; update_half = 1; break;
+                case 7457:  update_quarter = 1; break;
+                case 14913: update_quarter = 1; update_half = 1; break;
+                case 22371: update_quarter = 1; break;
+                case 37281: update_quarter = 1; update_half = 1; break;
+                case 37282: apu->cycle = 0; break;
             }
         }
 
-        // Clock triangle's linear and length counters
-        if (apu->channel_enable.triangle)
+        if (update_quarter)
         {
-            if (update_quarter)
+            // pulse envelopes
+            for (int i = 0; i < 2; ++i)
             {
-                if (apu->triangle.linear_counter_reload) apu->triangle.linear_counter = apu->triangle.linear_counter_reload_value;
-                else if (apu->triangle.linear_counter) apu->triangle.linear_counter--;
-
-                apu->triangle.linear_counter_reload &= apu->triangle.control_flag;
-            }
-
-            if (update_half && apu->triangle.length_counter)
-                apu->triangle.length_counter -= apu->triangle.length_counter_halt ^ 1;
-        }
-
-        // Update pulse channels
-        for (int i = 0; i < 2; ++i)
-        {
-            if ((apu->channel_enable.b & (i + 1)) && apu->pulse[i].length_counter)
-            {
-                // Update envelope
-                if (update_quarter)
+                if ((apu->channel_enable.b & (i + 1)) && apu->pulse[i].length_counter)
                 {
                     if (apu->pulse[i].env_start)
                     {
@@ -348,9 +346,41 @@ void nes_apu_execute(nes_apu* apu)
                             apu->pulse[i].env_counter = 15 * apu->pulse[i].env_loop;
                     }
                 }
+            }
 
-                // Update length counter and sweep unit
-                if (update_half)
+            // triangle linear counter
+            if (apu->channel_enable.triangle)
+            {
+                if (apu->triangle.linear_counter_reload) apu->triangle.linear_counter = apu->triangle.linear_counter_reload_value;
+                else if (apu->triangle.linear_counter) apu->triangle.linear_counter--;
+
+                apu->triangle.linear_counter_reload &= apu->triangle.control_flag;
+            }
+
+            // noise envelope
+            if (apu->channel_enable.noise && apu->noise.length_counter)
+            {
+                if (apu->noise.env_start)
+                {
+                    apu->noise.env_start = 0;
+                    apu->noise.env_counter = 15;
+                    apu->noise.env_divider = apu->noise.volume + 1;
+                }
+                else if (apu->noise.env_divider-- == 0)
+                {
+                    apu->noise.env_divider = apu->noise.volume;
+                    if (apu->noise.env_counter-- == 0)
+                        apu->noise.env_counter = 15 * apu->noise.env_loop;
+                }
+            }
+        }
+
+        if (update_half)
+        {
+            // pulse sweep and length counters
+            for (int i = 0; i < 2; ++i)
+            {
+                if ((apu->channel_enable.b & (i + 1)) && apu->pulse[i].length_counter)
                 {
                     apu->pulse[i].length_counter -= apu->pulse[i].length_counter_halt ^ 1;
 
@@ -366,7 +396,26 @@ void nes_apu_execute(nes_apu* apu)
                         apu->pulse[i].sweep_reload = 0;
                     }
                 }
+            }
 
+            // triangle length counter
+            if (apu->channel_enable.triangle && apu->triangle.length_counter)
+                apu->triangle.length_counter -= apu->triangle.length_counter_halt ^ 1;
+
+            // noise length counter
+            if (apu->channel_enable.noise && apu->noise.length_counter)
+                apu->noise.length_counter -= apu->noise.length_counter_halt ^ 1;
+        }
+    }
+
+    // Update pulse and noise channels
+    if (apu->cycle & 1)
+    {
+        // Update pulse channels
+        for (int i = 0; i < 2; ++i)
+        {
+            if ((apu->channel_enable.b & (i + 1)) && apu->pulse[i].length_counter)
+            {
                 if (apu->pulse[i].t-- == 0)
                 {
                     apu->pulse[i].t = apu->pulse[i].timer;
@@ -398,32 +447,9 @@ void nes_apu_execute(nes_apu* apu)
             }
         }
 
-        // Update noise
+        // Update noise channel
         if (apu->channel_enable.noise && apu->noise.length_counter)
         {
-            // Update envelope
-            if (update_quarter)
-            {
-                if (apu->noise.env_start)
-                {
-                    apu->noise.env_start = 0;
-                    apu->noise.env_counter = 15;
-                    apu->noise.env_divider = apu->noise.volume + 1;
-                }
-                else if (apu->noise.env_divider-- == 0)
-                {
-                    apu->noise.env_divider = apu->noise.volume;
-                    if (apu->noise.env_counter-- == 0)
-                        apu->noise.env_counter = 15 * apu->noise.env_loop;
-                }
-            }
-
-            // Update length counter
-            if (update_half)
-            {
-                apu->noise.length_counter -= apu->noise.length_counter_halt ^ 1;
-            }
-
             if (apu->noise.t-- == 0)
             {
                 apu->noise.t = apu->noise.timer;
@@ -436,25 +462,6 @@ void nes_apu_execute(nes_apu* apu)
         else
         {
             apu->noise.output = 0;
-        }
-
-        apu->cycle++;
-    }
-    else
-    {
-        // Update frame sequencer (even)
-        if (apu->sequencer_mode == 0)
-        {
-            switch(apu->cycle)
-            {
-                case 14915: apu->cycle = 0;
-                case 14914: apu->frame_interrupt = (apu->frame_interrupt == 0); break;
-                default: break;
-            }
-        }
-        else if (apu->cycle == 18641)
-        {
-            apu->cycle = 0;
         }
     }
 
@@ -474,9 +481,7 @@ void nes_apu_execute(nes_apu* apu)
         }
     }
 
-    apu->odd_cycle ^= 1;
-    
-    // dummy mixing
+    // Mixing
     {
         uint64_t pulse_out = (apu->pulse[0].output + apu->pulse[1].output) * 32298154ULL; 
         uint64_t tnd_out = apu->triangle.output * 36550171ULL + apu->noise.output * 21217138ULL;
@@ -484,7 +489,8 @@ void nes_apu_execute(nes_apu* apu)
         // dividing by 42949672ULL results in output in rage 0-100
         apu->samples[apu->sample_count++] = ((pulse_out + tnd_out)/42949672ULL) * 500;
     }
-    apu->sample_cycle += 77;
+
+    apu->cycle++;
 }
 
 #endif
