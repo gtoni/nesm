@@ -186,7 +186,7 @@ typedef struct nes_ppu
 
 #define _NES_PPU_COLOR_BLACK 15
 
-void nes_ppu_reset(nes_ppu* ppu)
+static void nes_ppu_reset(nes_ppu* ppu)
 {
     uint8_t default_palette[] = {
         0x09,0x01,0x00,0x01,0x00,0x02,0x02,0x0D,0x08,0x10,0x08,0x24,0x00,0x00,0x04,0x2C,
@@ -198,7 +198,7 @@ void nes_ppu_reset(nes_ppu* ppu)
     ppu->color_out = _NES_PPU_COLOR_BLACK;
 }
 
-void nes_ppu_execute(nes_ppu* __restrict ppu)
+static void nes_ppu_execute(nes_ppu* __restrict ppu)
 {
     // Update dot and scanline
     if (++ppu->dot >= SCANLINE_WIDTH)

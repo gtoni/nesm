@@ -14,7 +14,7 @@ find_package(SDL2 REQUIRED)
 set(SOURCE_FILES src/main.c src/emu/nes_system.c)
 include_directories(src ${SDL2_INCLUDE_DIR})
 add_executable(nesm ${SOURCE_FILES})
-target_link_libraries(nesm ${SDL2_LIBRARY} ${EXTRA_LIBS})
+target_link_libraries(nesm ${SDL2_LIBRARY} ${SDL2MAIN_LIBRARY} ${EXTRA_LIBS})
 
 
 

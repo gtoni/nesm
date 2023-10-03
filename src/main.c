@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <math.h>
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <assert.h>
 #include "emu/nes_system.h"
 
@@ -205,7 +205,7 @@ void on_nes_audio(nes_audio_output* audio, void* client)
 
 void sdl_audio_callback(void* client, uint8_t* stream, int len)
 {
-    float latency = ((ring_buf_available(&audio_ring_buf) / sizeof(int16_t)) / 44100.0f) * 1000.0f;
+    float latency = ((ring_buf_available(&audio_ring_buf) >> 1) / 44100.0f) * 1000.0f;
     latency_avg = (latency_avg * 0.99 + latency * 0.01);
 
     //printf("read latency: %.2f ms  avg: %.2f ms\n", latency, latency_avg);

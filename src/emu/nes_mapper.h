@@ -18,10 +18,10 @@ typedef struct nes_mapper
 
 // NROM
 
-void NROM_init(nes_cartridge* cartridge){}
-void NROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data){}
+static void NROM_init(nes_cartridge* cartridge){}
+static void NROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data){}
 
-uint8_t NROM_read(nes_cartridge* cartridge, uint16_t address)
+static uint8_t NROM_read(nes_cartridge* cartridge, uint16_t address)
 {
     if ((cartridge->prg_rom_size/1024) == 32)
         return *(cartridge->prg_rom + (address & 0x7FFF));
@@ -29,12 +29,12 @@ uint8_t NROM_read(nes_cartridge* cartridge, uint16_t address)
         return *(cartridge->prg_rom + (address & 0x3FFF));
 }
 
-uint8_t NROM_read_chr(nes_cartridge* cartridge, uint16_t address)
+static uint8_t NROM_read_chr(nes_cartridge* cartridge, uint16_t address)
 {
     return *(cartridge->chr_rom + address);
 }
 
-nes_mapper nes_mapper_get_NROM()
+static nes_mapper nes_mapper_get_NROM()
 {
     nes_mapper nrom = {0, &NROM_init, &NROM_read, &NROM_write, &NROM_read_chr};
     return nrom;
@@ -49,11 +49,11 @@ typedef struct uxrom_mapper_state
     uint8_t  bank_mask;
 }uxrom_mapper_state;
 
-void UxROM_init(nes_cartridge* cartridge)
+static void UxROM_init(nes_cartridge* cartridge)
 {
     const size_t bank_size = 16 * 1024;
     uxrom_mapper_state* state = (uxrom_mapper_state*)cartridge->mapper_state;
-    unsigned num_banks = cartridge->prg_rom_size / bank_size;
+    size_t num_banks = cartridge->prg_rom_size / bank_size;
     state->fixed_bank = cartridge->prg_rom + (num_banks - 1) * bank_size; 
     state->current_bank = state->fixed_bank;
     if (num_banks < 16)
@@ -62,7 +62,7 @@ void UxROM_init(nes_cartridge* cartridge)
         state->bank_mask = 0x0F;
 }
 
-uint8_t UxROM_read(nes_cartridge* cartridge, uint16_t address)
+static uint8_t UxROM_read(nes_cartridge* cartridge, uint16_t address)
 {
     uxrom_mapper_state* state = (uxrom_mapper_state*)cartridge->mapper_state;
     if (address >= 0xC000)
@@ -71,7 +71,7 @@ uint8_t UxROM_read(nes_cartridge* cartridge, uint16_t address)
         return *(state->current_bank + (address - 0x8000));
 }
 
-void UxROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
+static void UxROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
 {
     const size_t bank_size = 16 * 1024;
     uxrom_mapper_state* state = (uxrom_mapper_state*)cartridge->mapper_state;
@@ -81,7 +81,7 @@ void UxROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
     }
 }
 
-nes_mapper nes_mapper_get_UxROM()
+static nes_mapper nes_mapper_get_UxROM()
 {
     nes_mapper unrom = {sizeof(uxrom_mapper_state), &UxROM_init, &UxROM_read, &UxROM_write, &NROM_read_chr};
     return unrom;
@@ -95,27 +95,27 @@ typedef struct cnrom_mapper_state
     uint8_t  bank_mask;
 }cnrom_mapper_state;
 
-void CNROM_init(nes_cartridge* cartridge)
+static void CNROM_init(nes_cartridge* cartridge)
 {
     cnrom_mapper_state* state = (cnrom_mapper_state*)cartridge->mapper_state;
     state->current_bank = cartridge->chr_rom;
     state->bank_mask = 0x3;
 }
 
-void CNROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
+static void CNROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
 {
     const size_t bank_size = 8 * 1024;
     cnrom_mapper_state* state = (cnrom_mapper_state*)cartridge->mapper_state;
     state->current_bank = cartridge->chr_rom + (data & state->bank_mask) * bank_size;
 }
 
-uint8_t CNROM_read_chr(nes_cartridge* cartridge, uint16_t address)
+static uint8_t CNROM_read_chr(nes_cartridge* cartridge, uint16_t address)
 {
     cnrom_mapper_state* state = (cnrom_mapper_state*)cartridge->mapper_state;
     return *(state->current_bank + address);
 }
 
-nes_mapper nes_mapper_get_CNROM()
+static nes_mapper nes_mapper_get_CNROM()
 {
     nes_mapper unrom = {sizeof(cnrom_mapper_state), &CNROM_init, &NROM_read, &CNROM_write, &CNROM_read_chr};
     return unrom;
@@ -138,7 +138,7 @@ typedef struct mmc1_mapper_state
     uint8_t  ram[8192];
 }mmc1_mapper_state;
 
-void MMC1_init(nes_cartridge* cartridge)
+static void MMC1_init(nes_cartridge* cartridge)
 {
     mmc1_mapper_state* state = (mmc1_mapper_state*)cartridge->mapper_state;
     state->bank_mode = 3;
@@ -153,7 +153,7 @@ void MMC1_init(nes_cartridge* cartridge)
     state->ram_enable = 1;
 }
 
-uint8_t MMC1_read(nes_cartridge* cartridge, uint16_t address)
+static uint8_t MMC1_read(nes_cartridge* cartridge, uint16_t address)
 {
     mmc1_mapper_state* state = (mmc1_mapper_state*)cartridge->mapper_state;
     state->write_enable = 1;
@@ -180,7 +180,7 @@ uint8_t MMC1_read(nes_cartridge* cartridge, uint16_t address)
 }
 
 
-void MMC1_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
+static void MMC1_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
 {
     mmc1_mapper_state* state = (mmc1_mapper_state*)cartridge->mapper_state;
     if (address >= 0x6000 && address <= 0x7FFF)
@@ -249,7 +249,7 @@ void MMC1_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
     }
 }
 
-uint8_t MMC1_read_chr(nes_cartridge* cartridge, uint16_t address)
+static uint8_t MMC1_read_chr(nes_cartridge* cartridge, uint16_t address)
 {
     mmc1_mapper_state* state = (mmc1_mapper_state*)cartridge->mapper_state;
     state->write_enable = 1;
@@ -259,14 +259,14 @@ uint8_t MMC1_read_chr(nes_cartridge* cartridge, uint16_t address)
         return *(state->chr_bank_high + (address - 0x1000));
 }
 
-nes_mapper nes_mapper_get_MMC1()
+static nes_mapper nes_mapper_get_MMC1()
 {
     nes_mapper unrom = {sizeof(mmc1_mapper_state), &MMC1_init, &MMC1_read, &MMC1_write, &MMC1_read_chr};
     return unrom;
 }
 
 
-nes_mapper nes_mapper_get(int mapper_id)
+static nes_mapper nes_mapper_get(int mapper_id)
 {
     switch(mapper_id)
     {
