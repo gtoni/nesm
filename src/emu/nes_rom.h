@@ -67,7 +67,7 @@ struct ines_header
     uint8_t reserved[5];
 };
 
-nes_cartridge* nes_rom_create_ines_cartridge(void* rom_file, size_t rom_file_size)
+static nes_cartridge* nes_rom_create_ines_cartridge(void* rom_file, size_t rom_file_size)
 {
     struct ines_header* hdr = (struct ines_header*)rom_file;
     int mapper_id = ((hdr->flags7.mapper_high << 4) | hdr->flags6.mapper_low);
@@ -105,7 +105,7 @@ nes_cartridge* nes_rom_create_ines_cartridge(void* rom_file, size_t rom_file_siz
     return cartridge;
 }
 
-nes_cartridge* nes_rom_create_cartridge(void* rom_file, size_t rom_file_size, nes_rom_format format)
+static nes_cartridge* nes_rom_create_cartridge(void* rom_file, size_t rom_file_size, nes_rom_format format)
 {
     switch(format)
     {
@@ -115,7 +115,7 @@ nes_cartridge* nes_rom_create_cartridge(void* rom_file, size_t rom_file_size, ne
     return 0;
 }
 
-nes_cartridge* nes_rom_load_cartridge(const char* path)
+static nes_cartridge* nes_rom_load_cartridge(const char* path)
 {
     nes_rom_format format = NES_ROM_FORMAT_UNKNOWN;
     nes_cartridge* cartridge = 0;
@@ -129,17 +129,18 @@ nes_cartridge* nes_rom_load_cartridge(const char* path)
 
     if (format != NES_ROM_FORMAT_UNKNOWN)
     {
-        FILE*   rom_file = fopen(path, "rb");
-        void*   rom_file_data = 0;
-        size_t  rom_file_size = 0; 
-        if (rom_file)
+        FILE* rom_file = NULL;
+        if (fopen_s(&rom_file, path, "rb") == 0)
         {
+            void*   rom_file_data = 0;
+            size_t  rom_file_size = 0; 
+
             fseek(rom_file, 0, SEEK_END);
             rom_file_size = ftell(rom_file);
             fseek(rom_file, 0, SEEK_SET);
 
             rom_file_data = malloc(rom_file_size);
-            int r = fread(rom_file_data, rom_file_size, 1, rom_file);
+            fread(rom_file_data, rom_file_size, 1, rom_file);
 
             cartridge = nes_rom_create_cartridge(rom_file_data, rom_file_size, format);
             free(rom_file_data);
