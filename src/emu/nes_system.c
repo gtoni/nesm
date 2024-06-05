@@ -38,8 +38,12 @@ struct nes_system
 
 nes_system* nes_system_create(const char* rom_path, nes_config* config)
 {
+    nes_cartridge* cartridge = nes_rom_load_cartridge(rom_path);
+    if (!cartridge)
+        return 0;
+
     nes_system* system = (nes_system*)malloc(sizeof(nes_system));
-    system->cartridge = nes_rom_load_cartridge(rom_path);
+    system->cartridge = cartridge;
     system->own_cartridge = 1;
     system->config = *config;
     system->mapper = system->cartridge->mapper;
@@ -371,7 +375,7 @@ void apu_tick(nes_system* system)
 
     apu_rw_bus(system);
 
-    if (system->apu.sample_count == 29781)
+    if (system->apu.sample_count == NES_APU_MAX_SAMPLES)
     {
         nes_audio_output audio;
         audio.samples = system->apu.samples;

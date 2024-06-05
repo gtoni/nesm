@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <math.h>
 #include <SDL2/SDL.h>
 #include <assert.h>
@@ -9,7 +10,8 @@
 #define TEXTURE_HEIGHT  224
 
 #define CONTROLLER_DEADZONE 2048
-#define AUDIO_SAMPLES 220 /* 10 ms at 44100 sample rate */
+
+#define SAMPLE_RATE 44100
 
 SDL_Rect            video_srcrect = {0,0,TEXTURE_WIDTH, TEXTURE_HEIGHT};
 uint32_t*           texture_buffer = 0;
@@ -154,7 +156,7 @@ ring_buf_t audio_ring_buf;
 
 void init_audio_ring_buf()
 {
-    audio_ring_buf.buffer = malloc(1024);
+    audio_ring_buf.buffer = (uint8_t*)malloc(1024);
     audio_ring_buf.capacity = 1024;
     audio_ring_buf.write = audio_ring_buf.read = 0;
 }
@@ -169,16 +171,16 @@ void on_nes_audio(nes_audio_output* audio, void* client)
 
     SDL_LockAudioDevice(audio_device_id);
 
-    const float target_latency = 50.f;
-    float increment_rate = 44100.0f / (float)audio->sample_rate;
+    const float target_latency = 60.f;
+    float increment_rate = (float)SAMPLE_RATE / (float)audio->sample_rate;
 
     float diff = fabsf(target_latency - latency_avg);
     if (diff > 3.0f)
     {
         if (latency_avg < target_latency)
-            increment_rate += diff / 44100.0f;
+            increment_rate += diff / (float)SAMPLE_RATE;
         else
-            increment_rate -= diff / 44100.0f;
+            increment_rate -= diff / (float)SAMPLE_RATE;
     }
 
     for (uint32_t src = 0; src < audio->sample_count; ++src)
@@ -205,12 +207,12 @@ void on_nes_audio(nes_audio_output* audio, void* client)
 
 void sdl_audio_callback(void* client, uint8_t* stream, int len)
 {
-    float latency = ((ring_buf_available(&audio_ring_buf) >> 1) / 44100.0f) * 1000.0f;
-    latency_avg = (latency_avg * 0.99 + latency * 0.01);
+    float latency = ((ring_buf_available(&audio_ring_buf) >> 1) / (float)SAMPLE_RATE) * 1000.0f;
+    latency_avg = (latency_avg * 0.9f + latency * 0.1f);
 
     //printf("read latency: %.2f ms  avg: %.2f ms\n", latency, latency_avg);
 
-    int available = ring_buf_available(&audio_ring_buf);
+    int available = (int)ring_buf_available(&audio_ring_buf);
     if (available >= len)
     {
         size_t read = ring_buf_read(&audio_ring_buf, stream, len);
@@ -278,7 +280,7 @@ int main(int argc, char** argv)
     system = nes_system_create(rom_path, &config);
     if (!system)
     {
-        fprintf(stderr, "Failed to initialized nes system.\n");
+        fprintf(stderr, "Failed to initialized NES system.\n");
         return -1;
     }
 
@@ -304,10 +306,10 @@ int main(int argc, char** argv)
     }
 
     memset(&audio_spec_desired, 0, sizeof(SDL_AudioSpec));
-    audio_spec_desired.freq = 44100;
+    audio_spec_desired.freq = SAMPLE_RATE;
     audio_spec_desired.channels = 1;
     audio_spec_desired.format = AUDIO_S16;
-    audio_spec_desired.samples = AUDIO_SAMPLES;
+    audio_spec_desired.samples = 512;
     audio_spec_desired.callback = sdl_audio_callback;
     audio_device_id = SDL_OpenAudioDevice(0, 0, &audio_spec_desired, &audio_spec_obtained, 0);
     if (audio_device_id < 0)
@@ -316,7 +318,7 @@ int main(int argc, char** argv)
     }
     SDL_PauseAudioDevice(audio_device_id, 0);
 
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, TEXTURE_WIDTH, TEXTURE_HEIGHT);
     if (!texture)
     {
@@ -366,14 +368,14 @@ int main(int argc, char** argv)
         {
             dstrect.y = 0;
             dstrect.h = h;
-            dstrect.w = (float)h * aspect_ratio;
+            dstrect.w = (int)((float)h * aspect_ratio);
             dstrect.x = (w - dstrect.w)>>1;
         }
         else
         {
             dstrect.x = 0;
             dstrect.w = w;
-            dstrect.h = (float)w / aspect_ratio;
+            dstrect.h = (int)((float)w / aspect_ratio);
             dstrect.y = (h - dstrect.h)>>1;
         }
 
