@@ -414,7 +414,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
 
             if ((ppu->render_mask & NES_PPU_RENDER_MASK_SPRITES))
             {
-                unsigned x = ppu->dot - 2;
+                int x = ppu->dot - 2;
 
                 for (int i = 0; i < 8; ++i)
                 {
@@ -646,7 +646,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                         break; 
                     case 6:
                         if (current_oam.attribute.flip_x)
-                            ppu->sprite_shift_low[current_oam_index] = ((ppu->vram_data * 0x80200802ULL) & 0x0884422110ULL) * 0x0101010101ULL >> 32;
+                            ppu->sprite_shift_low[current_oam_index] = (uint8_t)(((ppu->vram_data * 0x80200802ULL) & 0x0884422110ULL) * 0x0101010101ULL >> 32);
                         else
                             ppu->sprite_shift_low[current_oam_index] = ppu->vram_data;
                         break;
@@ -673,7 +673,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                         break;
                     case 0:
                         if (current_oam.attribute.flip_x)
-                            ppu->sprite_shift_high[current_oam_index] = ((ppu->vram_data * 0x80200802ULL) & 0x0884422110ULL) * 0x0101010101ULL >> 32;
+                            ppu->sprite_shift_high[current_oam_index] = (uint8_t)(((ppu->vram_data * 0x80200802ULL) & 0x0884422110ULL) * 0x0101010101ULL >> 32);
                         else
                             ppu->sprite_shift_high[current_oam_index] = ppu->vram_data;
 

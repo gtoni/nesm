@@ -105,9 +105,17 @@ static nes_cartridge* nes_rom_create_ines_cartridge(void* rom_file, size_t rom_f
     return cartridge;
 }
 
-static nes_cartridge* nes_rom_create_cartridge(void* rom_file, size_t rom_file_size, nes_rom_format format)
+static nes_rom_format nes_rom_get_format(void* rom_file, size_t rom_file_size)
 {
-    switch(format)
+    if (rom_file_size > 4 && memcmp(rom_file, "NES\x1a", 4) == 0)
+        return NES_ROM_FORMAT_INES;
+
+    return NES_ROM_FORMAT_UNKNOWN;
+}
+
+static nes_cartridge* nes_rom_create_cartridge(void* rom_file, size_t rom_file_size)
+{
+    switch(nes_rom_get_format(rom_file, rom_file_size))
     {
         case NES_ROM_FORMAT_INES:    return nes_rom_create_ines_cartridge(rom_file, rom_file_size);
         case NES_ROM_FORMAT_UNKNOWN: return 0;
@@ -117,40 +125,29 @@ static nes_cartridge* nes_rom_create_cartridge(void* rom_file, size_t rom_file_s
 
 static nes_cartridge* nes_rom_load_cartridge(const char* path)
 {
-    nes_rom_format format = NES_ROM_FORMAT_UNKNOWN;
     nes_cartridge* cartridge = 0;
 
-    const char* ext = path + strlen(path) - 3;
-    if (ext <= path)
-        return 0;
-
-    if (strcmp(ext, "nes") == 0)
-        format = NES_ROM_FORMAT_INES;
-
-    if (format != NES_ROM_FORMAT_UNKNOWN)
+    FILE* rom_file = NULL;
+    if (fopen_s(&rom_file, path, "rb") == 0)
     {
-        FILE* rom_file = NULL;
-        if (fopen_s(&rom_file, path, "rb") == 0)
-        {
-            void*   rom_file_data = 0;
-            size_t  rom_file_size = 0; 
+        void*   rom_file_data = 0;
+        size_t  rom_file_size = 0; 
 
-            fseek(rom_file, 0, SEEK_END);
-            rom_file_size = ftell(rom_file);
-            fseek(rom_file, 0, SEEK_SET);
+        fseek(rom_file, 0, SEEK_END);
+        rom_file_size = ftell(rom_file);
+        fseek(rom_file, 0, SEEK_SET);
 
-            rom_file_data = malloc(rom_file_size);
-            fread(rom_file_data, rom_file_size, 1, rom_file);
+        rom_file_data = malloc(rom_file_size);
+        fread(rom_file_data, rom_file_size, 1, rom_file);
 
-            cartridge = nes_rom_create_cartridge(rom_file_data, rom_file_size, format);
-            free(rom_file_data);
+        cartridge = nes_rom_create_cartridge(rom_file_data, rom_file_size);
+        free(rom_file_data);
 
-            fclose(rom_file);
-        }
+        fclose(rom_file);
     }
     else
     {
-        fprintf(stderr, "Unknown ROM format\n");
+        perror("Failed to load NES ROM");
     }
 
     return cartridge;

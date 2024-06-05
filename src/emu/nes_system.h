@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include "nes_cartridge.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 typedef struct nes_controller_state
 {
     uint8_t right   : 1;
@@ -62,5 +66,9 @@ nes_system* nes_system_create(const char* rom_path, nes_config* config);
 void        nes_system_destroy(nes_system* system);
 void        nes_system_reset(nes_system* system);
 void        nes_system_frame(nes_system* system);
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif

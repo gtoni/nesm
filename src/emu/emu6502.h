@@ -160,7 +160,7 @@ static cpu_state cpu_reset()
 
 static cpu_state cpu_execute(cpu_state state)
 {
-    uint8_t cycle = state.cycle++;
+    uint8_t cycle = (uint8_t)state.cycle++;
     uint_fast32_t instruction = _CPU_GET_INSTRUCTION(state);
 
     if (cycle == 0)
@@ -483,7 +483,7 @@ static cpu_state cpu_execute(cpu_state state)
         switch (instruction)
         {
             case IC_BRK:
-                state.data = state.PC;
+                state.data = (uint8_t)state.PC;
                 state.address = ((uint8_t)state.S--) + 0x0100;
                 return state;
 

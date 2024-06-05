@@ -5,6 +5,8 @@
 #include <memory.h>
 #include <assert.h>
 
+#define NES_APU_MAX_SAMPLES             4096
+
 #define NES_APU_PULSE1_REG0_ID          0x4000
 #define NES_APU_PULSE1_REG1_ID          0x4001
 #define NES_APU_PULSE1_REG2_ID          0x4002
@@ -151,7 +153,7 @@ typedef struct nes_apu
     nes_apu_noise       noise;
     nes_apu_dmc         dmc;
 
-    int16_t     samples[44100];
+    int16_t     samples[NES_APU_MAX_SAMPLES];
     uint32_t    sample_count;
 
     uint32_t    cycle;
@@ -527,7 +529,11 @@ static void nes_apu_execute(nes_apu* apu)
             if (!apu->dmc.silence)
             {
                 int32_t vol = ((int32_t)apu->dmc.output) + ((apu->dmc.shift_register & 1) ? 2 : -2);
-                apu->dmc.output = vol < 0 ? 0 : (vol > 127 ? 127 : vol);
+
+                if (apu->channel_enable.dmc)
+                    apu->dmc.output = vol < 0 ? 0 : (vol > 127 ? 127 : vol);
+                else
+                    apu->dmc.output = 0;
             }
 
             apu->dmc.shift_register >>= 1;
@@ -572,20 +578,24 @@ static void nes_apu_execute(nes_apu* apu)
     }
 
     // Mixing
+
+    uint32_t sampleIndex = apu->sample_count % NES_APU_MAX_SAMPLES;
+    apu->sample_count = sampleIndex + 1;
+
 #if 0
     {
         uint64_t pulse_out = (apu->pulse[0].output + apu->pulse[1].output) * 32298154ULL; 
         uint64_t tnd_out = apu->triangle.output * 36550171ULL + apu->noise.output * 21217138ULL + apu->dmc.output * 14388140ULL;
 
         // dividing by 42949672ULL results in output in rage 0-100
-        apu->samples[apu->sample_count++] = (uint16_t)(((pulse_out + tnd_out)/42949672ULL) * 500);
+        apu->samples[sampleIndex] = (uint16_t)(((pulse_out + tnd_out)/42949672ULL) * 500);
     }
 #else
     {
         double square_out = 95.88 / ((8128.0 / (apu->pulse[0].output + apu->pulse[1].output)) + 100.0);
         double tnd_out = 159.79 / ((1.0 / (apu->triangle.output / 8227.0 + apu->noise.output / 12241.0 + apu->dmc.output / 22638.0)) + 100.0);
 
-        apu->samples[apu->sample_count++] = (int16_t)((square_out + tnd_out) * 32767);
+        apu->samples[sampleIndex] = (int16_t)((square_out + tnd_out) * 32767);
     }
 #endif
 
