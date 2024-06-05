@@ -67,7 +67,7 @@ struct ines_header
     uint8_t reserved[5];
 };
 
-static nes_cartridge* nes_rom_create_ines_cartridge(void* rom_file, size_t rom_file_size)
+static nes_cartridge* nes_rom_create_ines_cartridge(const void* rom_file, size_t rom_file_size)
 {
     struct ines_header* hdr = (struct ines_header*)rom_file;
     int mapper_id = ((hdr->flags7.mapper_high << 4) | hdr->flags6.mapper_low);
@@ -105,7 +105,7 @@ static nes_cartridge* nes_rom_create_ines_cartridge(void* rom_file, size_t rom_f
     return cartridge;
 }
 
-static nes_rom_format nes_rom_get_format(void* rom_file, size_t rom_file_size)
+static nes_rom_format nes_rom_get_format(const void* rom_file, size_t rom_file_size)
 {
     if (rom_file_size > 4 && memcmp(rom_file, "NES\x1a", 4) == 0)
         return NES_ROM_FORMAT_INES;
@@ -113,7 +113,7 @@ static nes_rom_format nes_rom_get_format(void* rom_file, size_t rom_file_size)
     return NES_ROM_FORMAT_UNKNOWN;
 }
 
-static nes_cartridge* nes_rom_create_cartridge(void* rom_file, size_t rom_file_size)
+static nes_cartridge* nes_rom_create_cartridge(const void* rom_file, size_t rom_file_size)
 {
     switch(nes_rom_get_format(rom_file, rom_file_size))
     {

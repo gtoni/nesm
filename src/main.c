@@ -129,7 +129,7 @@ nes_controller_state on_nes_input(int controller_id, void* client)
     }
 }
 
-void on_nes_video(nes_video_output* video, void* client)
+void on_nes_video(const nes_video_output* video, void* client)
 {
     const uint32_t colors[] = {
     0x545454, 0x741E00, 0x901008, 0x880030, 0x640044, 0x30005C, 0x000454, 0x00183C, 0x002A20, 0x003A08, 0x004000, 0x003C00, 0x3C3200, 0x000000, 0, 0,
@@ -164,7 +164,7 @@ void init_audio_ring_buf()
 float audio_counter = 0.0f;
 float latency_avg = 0.0f;
 
-void on_nes_audio(nes_audio_output* audio, void* client)
+void on_nes_audio(const nes_audio_output* audio, void* client)
 {
     int16_t resample_buf[512];
     uint32_t dst = 0;
@@ -272,12 +272,14 @@ int main(int argc, char** argv)
 
     snprintf(title, 256, "NESM - %s", rom_path);
 
+    config.source_type = NES_SOURCE_FILE;
+    config.source.file_path = rom_path;
     config.client_data = 0;
     config.input_callback = &on_nes_input;
     config.video_callback = &on_nes_video;
     config.audio_callback = &on_nes_audio;
 
-    system = nes_system_create(rom_path, &config);
+    system = nes_system_create(&config);
     if (!system)
     {
         fprintf(stderr, "Failed to initialized NES system.\n");

@@ -52,17 +52,33 @@ typedef struct nes_audio_output
     uint32_t    sample_rate;
 } nes_audio_output;
 
+typedef enum nes_source_type
+{
+    NES_SOURCE_FILE,
+    NES_SOURCE_MEMORY,
+    NES_SOURCE_CARTRIGE
+} nes_source_type;
+
+typedef struct nes_source
+{
+    struct { const void* data; size_t data_size; } memory;
+    const char*     file_path;
+    nes_cartridge*  cartridge;
+} nes_source;
+
 typedef struct nes_config
 {
-    void*                client_data;
-    nes_controller_state (*input_callback)(int controller_id, void* client_data);
-    void                 (*video_callback)(nes_video_output* video_output, void* client_data);
-    void                 (*audio_callback)(nes_audio_output* audio_output, void* client_data);
+    nes_source_type         source_type;
+    nes_source              source;
+    void*                   client_data;
+    nes_controller_state    (*input_callback)(int controller_id, void* client_data);
+    void                    (*video_callback)(const nes_video_output* video_output, void* client_data);
+    void                    (*audio_callback)(const nes_audio_output* audio_output, void* client_data);
 } nes_config;
 
 typedef struct nes_system nes_system;
 
-nes_system* nes_system_create(const char* rom_path, nes_config* config);
+nes_system* nes_system_create(nes_config* config);
 void        nes_system_destroy(nes_system* system);
 void        nes_system_reset(nes_system* system);
 void        nes_system_frame(nes_system* system);
