@@ -36,18 +36,38 @@ struct nes_system
     uint8_t         ram[0x800];
 };
 
-nes_system* nes_system_create(const char* rom_path, nes_config* config)
+nes_system* nes_system_create(nes_config* config)
 {
-    nes_cartridge* cartridge = nes_rom_load_cartridge(rom_path);
+    int own_cartridge;
+    nes_cartridge* cartridge;
+
+    if (config->source_type == NES_SOURCE_FILE)
+    {
+        own_cartridge = 1;
+        cartridge = nes_rom_load_cartridge(config->source.file_path);
+    }
+    else if (config->source_type == NES_SOURCE_MEMORY)
+    {
+        own_cartridge = 1;
+        cartridge = nes_rom_create_cartridge(config->source.memory.data, config->source.memory.data_size);
+    }
+    else if (config->source_type == NES_SOURCE_CARTRIGE)
+    {
+        own_cartridge = 0;
+        cartridge = config->source.cartridge;
+    }
+
     if (!cartridge)
         return 0;
 
-    nes_system* system = (nes_system*)malloc(sizeof(nes_system));
-    system->cartridge = cartridge;
-    system->own_cartridge = 1;
-    system->config = *config;
-    system->mapper = system->cartridge->mapper;
+    nes_system* system      = (nes_system*)malloc(sizeof(nes_system));
+    system->own_cartridge   = own_cartridge;
+    system->cartridge       = cartridge;
+    system->mapper          = cartridge->mapper;
+    system->config          = *config;
+
     nes_system_reset(system);
+
     return system;
 }
 
