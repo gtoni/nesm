@@ -7,53 +7,51 @@
 
 // todo:
 // - PPU leftmost clipping
-// - proper CHR RAM
 // - 2nd controller handling
-// - APU
+
+typedef struct nes_system_state
+{
+    cpu_state   cpu;
+    nes_ppu     ppu;
+    nes_apu     apu;
+    int         cpu_odd_cycle;
+    int         oam_dma;
+    uint8_t     oam_dma_data;
+    int         oam_dma_cycle;
+    uint16_t    oam_dma_src_address;
+    uint8_t     oam_dma_dst_address;
+    int         dmc_dma;
+    uint8_t     dmc_dma_stall;
+    uint16_t    dmc_dma_src_address;
+    uint8_t     controller_input0;
+    uint8_t     controller_input1;
+    uint8_t     ram[0x800];
+    uint8_t     vram[0x2000];
+    uint8_t     chr_ram[0x2000];
+} nes_system_state;
 
 struct nes_system
 {
-    nes_config      config;
-    nes_cartridge*  cartridge;
-    nes_mapper*     mapper;
-    cpu_state       cpu;
-    nes_ppu         ppu;
-    nes_apu         apu;
-    int             own_cartridge;
-    int             cpu_odd_cycle;
-    int             oam_dma;
-    uint8_t         oam_dma_data;
-    int             oam_dma_cycle;
-    uint16_t        oam_dma_src_address;
-    uint8_t         oam_dma_dst_address;
-    int             dmc_dma;
-    uint8_t         dmc_dma_stall;
-    uint16_t        dmc_dma_src_address;
-    uint8_t         controller_input0;
-    uint8_t         controller_input1;
-    uint8_t         framebuffer[SCANLINE_WIDTH * TOTAL_SCANLINES];
-    uint8_t         vram[0x2000];
-    uint8_t         ram[0x800];
+    nes_system_state    state;
+    nes_config          config;
+    nes_cartridge*      cartridge;
+    uint8_t             framebuffer[SCANLINE_WIDTH * TOTAL_SCANLINES];
 };
 
 nes_system* nes_system_create(nes_config* config)
 {
-    int own_cartridge;
     nes_cartridge* cartridge;
 
     if (config->source_type == NES_SOURCE_FILE)
     {
-        own_cartridge = 1;
         cartridge = nes_rom_load_cartridge(config->source.file_path);
     }
     else if (config->source_type == NES_SOURCE_MEMORY)
     {
-        own_cartridge = 1;
         cartridge = nes_rom_create_cartridge(config->source.memory.data, config->source.memory.data_size);
     }
     else if (config->source_type == NES_SOURCE_CARTRIGE)
     {
-        own_cartridge = 0;
         cartridge = config->source.cartridge;
     }
 
@@ -61,9 +59,7 @@ nes_system* nes_system_create(nes_config* config)
         return 0;
 
     nes_system* system      = (nes_system*)malloc(sizeof(nes_system));
-    system->own_cartridge   = own_cartridge;
     system->cartridge       = cartridge;
-    system->mapper          = cartridge->mapper;
     system->config          = *config;
 
     nes_system_reset(system);
@@ -73,49 +69,84 @@ nes_system* nes_system_create(nes_config* config)
 
 void nes_system_destroy(nes_system* system)
 {
-    if (system->own_cartridge)
-    {
+    if (system->config.source_type != NES_SOURCE_CARTRIGE)
         free(system->cartridge);
-    }
+
     free(system);
 }
 
 void nes_system_reset(nes_system* system)
 {
-    nes_ppu_reset(&system->ppu);
-    nes_apu_reset(&system->apu);
-    system->cpu = cpu_reset();
-    system->cpu_odd_cycle = 0;
-    system->oam_dma = 0;
-    system->oam_dma_data = 0;
-    system->oam_dma_cycle = 0;
-    system->oam_dma_src_address = 0;
-    system->oam_dma_dst_address = 0;
-    system->controller_input0 = 0;
-    system->controller_input1 = 1;
+    nes_system_state* state = &system->state;
+
+    nes_ppu_reset(&state->ppu);
+    nes_apu_reset(&state->apu);
+    state->cpu = cpu_reset();
+    state->cpu_odd_cycle = 0;
+    state->oam_dma = 0;
+    state->oam_dma_data = 0;
+    state->oam_dma_cycle = 0;
+    state->oam_dma_src_address = 0;
+    state->oam_dma_dst_address = 0;
+    state->controller_input0 = 0;
+    state->controller_input1 = 1;
+}
+
+size_t nes_system_get_state_size(nes_system *system)
+{
+    return sizeof(nes_system_state) + system->cartridge->mapper->state_size;
+}
+
+int nes_system_save_state(nes_system* system, void* buffer, size_t buffer_size)
+{
+    size_t state_size = nes_system_get_state_size(system);
+    
+    if (buffer && buffer_size >= state_size)
+    {
+        memcpy(buffer,                                   &system->state,                    sizeof(nes_system_state));
+        memcpy((char*)buffer + sizeof(nes_system_state), system->cartridge->mapper_state,  system->cartridge->mapper->state_size);
+        return 1;
+    }
+
+    return 0;
+}
+
+int nes_system_load_state(nes_system* system, const void* buffer, size_t buffer_size)
+{
+    size_t state_size = nes_system_get_state_size(system);
+    
+    if (buffer && buffer_size >= state_size)
+    {
+        memcpy(&system->state,                   buffer,                                   sizeof(nes_system_state));
+        memcpy(system->cartridge->mapper_state, (char*)buffer + sizeof(nes_system_state),  system->cartridge->mapper->state_size);
+        return 1;
+    }
+
+    return 0;
 }
 
 //////////////
 
-void ppu_rw_bus(nes_system* system)
+static void ppu_rw_bus(nes_system* system)
 {
-    uint16_t address = system->ppu.vram_address & 0x3FFF;
+    nes_system_state* state = &system->state;
+    nes_mapper* mapper = system->cartridge->mapper;
+
+    uint16_t address = state->ppu.vram_address & 0x3FFF;
 
     if (address < 0x2000)
     {
         if (system->cartridge->chr_rom_size > address)
         {
-            if (system->ppu.r)
-                system->ppu.vram_data = system->mapper->read_chr(system->cartridge, address);
+            if (state->ppu.r)
+                state->ppu.vram_data = mapper->read_chr(system->cartridge, address);
         }
         else
         {
-            // CHR_RAM hack
-            static uint8_t chr_ram[0x2000];
-            if (system->ppu.r)
-                system->ppu.vram_data = chr_ram[address];
+            if (state->ppu.r)
+                state->ppu.vram_data = state->chr_ram[address];
             else
-                chr_ram[address] = system->ppu.vram_data;
+                state->chr_ram[address] = state->ppu.vram_data;
         }
     }
     else
@@ -145,48 +176,54 @@ void ppu_rw_bus(nes_system* system)
             }
         }
 
-        if (system->ppu.r)
-            system->ppu.vram_data = system->vram[address];
+        if (state->ppu.r)
+            state->ppu.vram_data = state->vram[address];
         else
-            system->vram[address] = system->ppu.vram_data;
+            state->vram[address] = state->ppu.vram_data;
     }
 }
 
-void ppu_tick(nes_system* system)
+static void ppu_tick(nes_system* system)
 {
-    if (system->ppu.r | system->ppu.w)
+    nes_system_state* state = &system->state;
+
+    if (state->ppu.r | state->ppu.w)
         ppu_rw_bus(system);
 
-    nes_ppu_execute(&system->ppu);
+    nes_ppu_execute(&state->ppu);
     
-    system->framebuffer[system->ppu.scanline * SCANLINE_WIDTH + system->ppu.dot] = system->ppu.color_out;
+    system->framebuffer[state->ppu.scanline * SCANLINE_WIDTH + state->ppu.dot] = state->ppu.color_out;
    
-    if (system->ppu.scanline == (LAST_RENDER_SCANLINE + 1) && system->ppu.dot == 0)
+    if (state->ppu.scanline == (LAST_RENDER_SCANLINE + 1) && state->ppu.dot == 0)
     {
         nes_video_output video_output;
         video_output.framebuffer = (nes_pixel*)(system->framebuffer + 2 + (NES_FRAMEBUFFER_ROW_STRIDE * 8));
-        video_output.width = 256;
+        video_output.width  = 256;
         video_output.height = 224;
-        video_output.odd_frame = !system->ppu.is_even_frame;
-        video_output.emphasize_red = system->ppu.render_mask & NES_PPU_RENDER_MASK_EMPHASIZE_RED;
-        video_output.emphasize_green = system->ppu.render_mask & NES_PPU_RENDER_MASK_EMPHASIZE_GREEN;
-        video_output.emphasize_blue = system->ppu.render_mask & NES_PPU_RENDER_MASK_EMPHASIZE_BLUE;
+        video_output.odd_frame = !state->ppu.is_even_frame;
+        video_output.emphasize_red      = state->ppu.render_mask & NES_PPU_RENDER_MASK_EMPHASIZE_RED;
+        video_output.emphasize_green    = state->ppu.render_mask & NES_PPU_RENDER_MASK_EMPHASIZE_GREEN;
+        video_output.emphasize_blue     = state->ppu.render_mask & NES_PPU_RENDER_MASK_EMPHASIZE_BLUE;
 
         system->config.video_callback(&video_output, system->config.client_data);
     }
 }
 
-void oam_dma_init(nes_system* system, uint8_t src_address, uint8_t dst_address)
+static void oam_dma_init(nes_system* system, uint8_t src_address, uint8_t dst_address)
 {
-    system->oam_dma = 1;
-    system->oam_dma_cycle = system->cpu_odd_cycle;
-    system->oam_dma_src_address = src_address << 8;
-    system->oam_dma_dst_address = dst_address;
+    nes_system_state* state = &system->state;
+
+    state->oam_dma = 1;
+    state->oam_dma_cycle = state->cpu_odd_cycle;
+    state->oam_dma_src_address = src_address << 8;
+    state->oam_dma_dst_address = dst_address;
 }
 
-void oam_dma_execute(nes_system* system)
+static void oam_dma_execute(nes_system* system)
 {
-    int cur = system->oam_dma_cycle++;
+    nes_system_state* state = &system->state;
+
+    int cur = state->oam_dma_cycle++;
     if (cur == 1)
     {
         // dummy cycle
@@ -195,120 +232,126 @@ void oam_dma_execute(nes_system* system)
     {
         if (cur % 2)
         {
-            system->ppu.primary_oam.bytes[(system->oam_dma_dst_address++)&0xFF] = system->oam_dma_data;
+            state->ppu.primary_oam.bytes[(state->oam_dma_dst_address++)&0xFF] = state->oam_dma_data;
         }
         else
         {
-            if (system->oam_dma_src_address >= 0x6000)
+            if (state->oam_dma_src_address >= 0x6000)
             {
-                system->oam_dma_data = system->mapper->read(system->cartridge, system->oam_dma_src_address);
+                state->oam_dma_data = system->cartridge->mapper->read(system->cartridge, state->oam_dma_src_address);
             }
             else
             {
-                system->oam_dma_data = system->ram[system->oam_dma_src_address & 0x7FF];
+                state->oam_dma_data = state->ram[state->oam_dma_src_address & 0x7FF];
             }
-            system->oam_dma_src_address++;
+            state->oam_dma_src_address++;
         }
     }
     else if (cur == 514)
     {
-        system->oam_dma = 0;
+        state->oam_dma = 0;
     }
 }
 
-void dmc_dma_init(nes_system* system)
+static void dmc_dma_init(nes_system* system)
 {
-    system->dmc_dma = 1;
-    system->dmc_dma_src_address = system->apu.dmc.current_address;
+    nes_system_state* state = &system->state;
 
-    if (system->oam_dma)
+    state->dmc_dma = 1;
+    state->dmc_dma_src_address = state->apu.dmc.current_address;
+
+    if (state->oam_dma)
     {
-        if (system->oam_dma_cycle == 514)       system->dmc_dma_stall = 3;
-        else if (system->oam_dma_cycle == 513)  system->dmc_dma_stall = 1;
-        else                                    system->dmc_dma_stall = 2;
+        if (state->oam_dma_cycle == 514)       state->dmc_dma_stall = 3;
+        else if (state->oam_dma_cycle == 513)  state->dmc_dma_stall = 1;
+        else                                   state->dmc_dma_stall = 2;
     }
     else
     {
-        system->dmc_dma_stall = 4;
-        if (system->cpu.rw_mode == CPU_RW_MODE_WRITE)
+        state->dmc_dma_stall = 4;
+        if (state->cpu.rw_mode == CPU_RW_MODE_WRITE)
         {
-            cpu_state cpuNext = cpu_execute(system->cpu);
+            cpu_state cpuNext = cpu_execute(state->cpu);
             if (cpuNext.rw_mode != CPU_RW_MODE_WRITE)
-                system->dmc_dma_stall = 3;
+                state->dmc_dma_stall = 3;
         }
     }
 }
 
-void dmc_dma_execute(nes_system* system)
+static void dmc_dma_execute(nes_system* system)
 {
-    if (--system->dmc_dma_stall == 0)
+    nes_system_state* state = &system->state;
+
+    if (--state->dmc_dma_stall == 0)
     {
-        if (system->dmc_dma_src_address >= 0x6000)
+        if (state->dmc_dma_src_address >= 0x6000)
         {
-            system->apu.dmc.sample_buffer = system->mapper->read(system->cartridge, system->dmc_dma_src_address);
+            state->apu.dmc.sample_buffer = system->cartridge->mapper->read(system->cartridge, state->dmc_dma_src_address);
         }
         else
         {
-            system->apu.dmc.sample_buffer = system->ram[system->dmc_dma_src_address & 0x7FF];
+            state->apu.dmc.sample_buffer = state->ram[state->dmc_dma_src_address & 0x7FF];
         }
 
-        system->apu.dmc.sample_buffer_loaded = 1;
-        system->apu.dmc.bytes_remaining--;
-        system->apu.dmc.current_address = 0x8000 + ((system->apu.dmc.current_address + 1) & 0x7FFF);
+        state->apu.dmc.sample_buffer_loaded = 1;
+        state->apu.dmc.bytes_remaining--;
+        state->apu.dmc.current_address = 0x8000 + ((state->apu.dmc.current_address + 1) & 0x7FFF);
 
-        if (!system->apu.dmc.bytes_remaining)
+        if (!state->apu.dmc.bytes_remaining)
         {
-            if (system->apu.dmc.loop)
+            if (state->apu.dmc.loop)
             {
-                system->apu.dmc.current_address = system->apu.dmc.sample_address;
-                system->apu.dmc.bytes_remaining = system->apu.dmc.sample_length;
+                state->apu.dmc.current_address = state->apu.dmc.sample_address;
+                state->apu.dmc.bytes_remaining = state->apu.dmc.sample_length;
             }
             else
             {
-                system->apu.dmc.interrupt = system->apu.dmc.irq_enabled;
+                state->apu.dmc.interrupt = state->apu.dmc.irq_enabled;
             }
         }
 
-        system->dmc_dma = 0;
+        state->dmc_dma = 0;
     }
 }
 
-void cpu_rw_bus(nes_system* system)
+static void cpu_rw_bus(nes_system* system)
 {
-    if (system->cpu.rw_mode == CPU_RW_MODE_READ)
+    nes_system_state* state = &system->state;
+
+    if (state->cpu.rw_mode == CPU_RW_MODE_READ)
     {
-        if (system->cpu.address >= 0x6000)
+        if (state->cpu.address >= 0x6000)
         {
-            system->cpu.data = system->mapper->read(system->cartridge, system->cpu.address);
+            state->cpu.data = system->cartridge->mapper->read(system->cartridge, state->cpu.address);
         }
         else
         {
-            if (system->cpu.address < 0x2000)
+            if (state->cpu.address < 0x2000)
             {
-                system->cpu.data = system->ram[system->cpu.address & 0x7FF];
+                state->cpu.data = state->ram[state->cpu.address & 0x7FF];
             }
             else
             {
-                if (system->cpu.address < 0x4000)
+                if (state->cpu.address < 0x4000)
                 {
-                    system->ppu.reg_rw_mode = NES_PPU_REG_RW_MODE_READ;
-                    system->ppu.reg_addr = system->cpu.address & 7;
-                    system->cpu.data = system->ppu.reg_data;
+                    state->ppu.reg_rw_mode = NES_PPU_REG_RW_MODE_READ;
+                    state->ppu.reg_addr = state->cpu.address & 7;
+                    state->cpu.data = state->ppu.reg_data;
                 }
                 else
                 {
-                    switch (system->cpu.address)
+                    switch (state->cpu.address)
                     {
                         case 0x4016: // Controller 0
                         {
-                            system->cpu.data = (system->controller_input0 >> 7) & 1;
-                            system->controller_input0 = (system->controller_input0 << 1) | 1;
+                            state->cpu.data = (state->controller_input0 >> 7) & 1;
+                            state->controller_input0 = (state->controller_input0 << 1) | 1;
                         }
                         break;
                         case 0x4015: // APU Status
                         {
-                            system->apu.reg_rw_mode = NES_APU_REG_RW_MODE_READ;
-                            system->apu.reg_addr = 0x4015;
+                            state->apu.reg_rw_mode = NES_APU_REG_RW_MODE_READ;
+                            state->apu.reg_addr = 0x4015;
                         }
                         break;
                     }
@@ -316,46 +359,46 @@ void cpu_rw_bus(nes_system* system)
             }
         }
     }
-    else if (system->cpu.rw_mode == CPU_RW_MODE_WRITE)
+    else if (state->cpu.rw_mode == CPU_RW_MODE_WRITE)
     {
-        if (system->cpu.address >= 0x6000)
+        if (state->cpu.address >= 0x6000)
         {
-            system->mapper->write(system->cartridge, system->cpu.address, system->cpu.data);
+            system->cartridge->mapper->write(system->cartridge, state->cpu.address, state->cpu.data);
         }
         else
         {
-            if (system->cpu.address < 0x2000)
+            if (state->cpu.address < 0x2000)
             {
-                system->ram[system->cpu.address & 0x7FF] = system->cpu.data;
+                state->ram[state->cpu.address & 0x7FF] = state->cpu.data;
             }
             else
             {
-                if (system->cpu.address < 0x4000)
+                if (state->cpu.address < 0x4000)
                 {
-                    system->ppu.reg_rw_mode = NES_PPU_REG_RW_MODE_WRITE;
-                    system->ppu.reg_addr = system->cpu.address & 7;
-                    system->ppu.reg_data = system->cpu.data;
+                    state->ppu.reg_rw_mode = NES_PPU_REG_RW_MODE_WRITE;
+                    state->ppu.reg_addr = state->cpu.address & 7;
+                    state->ppu.reg_data = state->cpu.data;
                 }
                 else
                 {
-                    switch (system->cpu.address)
+                    switch (state->cpu.address)
                     {
                         case 0x4014:
                         {
-                            oam_dma_init(system, system->cpu.data, system->ppu.oam_address);
+                            oam_dma_init(system, state->cpu.data, state->ppu.oam_address);
                         }
                         break;
                         case 0x4016:
                         {
-                            if (system->cpu.data == 1)
+                            if (state->cpu.data == 1)
                             {
-                                system->controller_input0 = 0;
-                                system->controller_input1 = 0;
+                                state->controller_input0 = 0;
+                                state->controller_input1 = 0;
                             }
                             else
                             {
-                                nes_controller_state state = system->config.input_callback(0, system->config.client_data);
-                                memcpy(&system->controller_input0, &state, 1);
+                                nes_controller_state controller_state = system->config.input_callback(0, system->config.client_data);
+                                memcpy(&state->controller_input0, &controller_state, 1);
                             }
                         }
                         break;
@@ -368,9 +411,9 @@ void cpu_rw_bus(nes_system* system)
                         case 0x4015: // Status 
                         case 0x4017: // Frame counter
                         {
-                            system->apu.reg_rw_mode = NES_APU_REG_RW_MODE_WRITE;
-                            system->apu.reg_addr = system->cpu.address;
-                            system->apu.reg_data = system->cpu.data;
+                            state->apu.reg_rw_mode = NES_APU_REG_RW_MODE_WRITE;
+                            state->apu.reg_addr = state->cpu.address;
+                            state->apu.reg_data = state->cpu.data;
                         }
                         break;
                     }
@@ -380,66 +423,74 @@ void cpu_rw_bus(nes_system* system)
     }
 }
 
-void apu_rw_bus(nes_system* system)
+static void apu_rw_bus(nes_system* system)
 {
-    if (system->cpu.rw_mode == CPU_RW_MODE_READ && system->cpu.address == 0x4015)
-        system->cpu.data = system->apu.reg_data;
+    nes_system_state* state = &system->state;
 
-    if (system->dmc_dma == 0 && system->apu.dmc.sample_buffer_loaded == 0 && system->apu.dmc.bytes_remaining)
+    if (state->cpu.rw_mode == CPU_RW_MODE_READ && state->cpu.address == 0x4015)
+        state->cpu.data = state->apu.reg_data;
+
+    if (state->dmc_dma == 0 && state->apu.dmc.sample_buffer_loaded == 0 && state->apu.dmc.bytes_remaining)
         dmc_dma_init(system);
 }
 
-void apu_tick(nes_system* system)
+static void apu_tick(nes_system* system)
 {
-    nes_apu_execute(&system->apu);
+    nes_system_state* state = &system->state;
+
+    nes_apu_execute(&state->apu);
 
     apu_rw_bus(system);
 
-    if (system->apu.sample_count == NES_APU_MAX_SAMPLES)
+    if (state->apu.sample_count == NES_APU_MAX_SAMPLES)
     {
         nes_audio_output audio;
-        audio.samples = system->apu.samples;
-        audio.sample_count = system->apu.sample_count;
+        audio.samples = state->apu.samples;
+        audio.sample_count = state->apu.sample_count;
         audio.sample_rate = 1789773;
 
         system->config.audio_callback(&audio, system->config.client_data);
-        system->apu.sample_count = 0;
+        state->apu.sample_count = 0;
     }
 }
 
-void cpu_tick(nes_system* system)
+static void cpu_tick(nes_system* system)
 {
-    system->cpu = cpu_execute(system->cpu);
+    nes_system_state* state = &system->state;
+
+    state->cpu = cpu_execute(state->cpu);
 
     cpu_rw_bus(system);
 }
 
 void nes_system_tick(nes_system* system)
 {
-    int had_vbl = system->ppu.vbl;
+    nes_system_state* state = &system->state;
+
+    int had_vbl = state->ppu.vbl;
 
     ppu_tick(system);
 
     // Transfer data read from PPU to CPU immediately AFTER the PPU processes the read request
-    if (system->cpu.rw_mode == CPU_RW_MODE_READ && system->cpu.address >= 0x2000 && system->cpu.address <= 0x3F00)
+    if (state->cpu.rw_mode == CPU_RW_MODE_READ && state->cpu.address >= 0x2000 && state->cpu.address <= 0x3F00)
     {
-        system->cpu.data = system->ppu.reg_data;
+        state->cpu.data = state->ppu.reg_data;
     }
 
     ppu_tick(system);
     ppu_tick(system);
 
-    if (!had_vbl && system->ppu.vbl)
-        system->cpu.nmi = 1;
+    if (!had_vbl && state->ppu.vbl)
+        state->cpu.nmi = 1;
 
     apu_tick(system);
-    system->cpu.irq = system->apu.frame_interrupt | system->apu.dmc.interrupt;
+    state->cpu.irq = state->apu.frame_interrupt | state->apu.dmc.interrupt;
 
-    if (system->dmc_dma)
+    if (state->dmc_dma)
     {
         dmc_dma_execute(system);
     }
-    else if (system->oam_dma)
+    else if (state->oam_dma)
     {
         oam_dma_execute(system);
     }
@@ -448,7 +499,7 @@ void nes_system_tick(nes_system* system)
         cpu_tick(system);
     }
     
-    system->cpu_odd_cycle ^= 1; 
+    state->cpu_odd_cycle ^= 1; 
 }
 
 void nes_system_frame(nes_system* system)

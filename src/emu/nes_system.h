@@ -81,6 +81,12 @@ typedef struct nes_system nes_system;
 nes_system* nes_system_create(nes_config* config);
 void        nes_system_destroy(nes_system* system);
 void        nes_system_reset(nes_system* system);
+
+size_t      nes_system_get_state_size(nes_system* system);
+int         nes_system_save_state(nes_system* system, void* buffer, size_t buffer_size);
+int         nes_system_load_state(nes_system* system, const void* buffer, size_t buffer_size);
+
+void        nes_system_tick(nes_system* system);
 void        nes_system_frame(nes_system* system);
 
 #if defined(__cplusplus)

@@ -22,6 +22,42 @@ SDL_Texture*        texture = 0;
 SDL_GameController* controller[2];
 SDL_AudioDeviceID   audio_device_id;
 
+char                save_path[1024];
+void*               state_buffer = 0;
+size_t              state_buffer_size = 0;
+
+void write_save()
+{
+    if (state_buffer)
+    {
+        FILE* file;
+        if (fopen_s(&file, save_path, "wb") == 0)
+        {
+            fwrite(state_buffer, 1, state_buffer_size, file);
+            fclose(file);
+        }
+    }
+}
+
+void read_save()
+{
+    if (!state_buffer)
+    {
+        FILE* file;
+        if (fopen_s(&file, save_path, "rb") == 0)
+        {
+            fseek(file, 0, SEEK_END);
+            state_buffer_size = ftell(file);
+            state_buffer = malloc(state_buffer_size);
+
+            fseek(file, 0, SEEK_SET);
+
+            fread(state_buffer, 1, state_buffer_size, file);
+            fclose(file);
+        }
+    }
+}
+
 typedef struct ring_buf_t ring_buf_t;
 struct ring_buf_t
 {
@@ -95,14 +131,18 @@ nes_controller_state on_nes_input(int controller_id, void* client)
     if (controller_id == 0)
     {
         const uint8_t* keys = SDL_GetKeyboardState(0);
-        state.up    = keys[SDL_SCANCODE_W];
-        state.down  = keys[SDL_SCANCODE_S];
-        state.left  = keys[SDL_SCANCODE_A];
-        state.right = keys[SDL_SCANCODE_D];
-        state.A     = keys[SDL_SCANCODE_J];
-        state.B     = keys[SDL_SCANCODE_K];
-        state.select = keys[SDL_SCANCODE_TAB];
-        state.start  = keys[SDL_SCANCODE_RETURN];
+        int is_ctrl_down = keys[SDL_SCANCODE_LCTRL] | keys[SDL_SCANCODE_RCTRL];
+        if (!is_ctrl_down)
+        {
+            state.up    = keys[SDL_SCANCODE_W];
+            state.down  = keys[SDL_SCANCODE_S];
+            state.left  = keys[SDL_SCANCODE_A];
+            state.right = keys[SDL_SCANCODE_D];
+            state.A     = keys[SDL_SCANCODE_J];
+            state.B     = keys[SDL_SCANCODE_K];
+            state.select = keys[SDL_SCANCODE_TAB];
+            state.start  = keys[SDL_SCANCODE_RETURN];
+        }
 
         if (controller[0])
         {
@@ -225,7 +265,7 @@ void sdl_audio_callback(void* client, uint8_t* stream, int len)
     }
 }
 
-void handle_shortcut_key(SDL_Scancode key)
+void handle_shortcut_key(nes_system* system, SDL_Scancode key)
 {
     const uint8_t* keys = SDL_GetKeyboardState(0);
     int is_ctrl_down = keys[SDL_SCANCODE_LCTRL] | keys[SDL_SCANCODE_RCTRL];
@@ -238,6 +278,30 @@ void handle_shortcut_key(SDL_Scancode key)
         if (scale != wnd_scale)
         {
             SDL_SetWindowSize(wnd, TEXTURE_WIDTH * wnd_scale, TEXTURE_HEIGHT * wnd_scale);
+        }
+
+        if (key == SDL_SCANCODE_S)
+        {
+            if (!state_buffer)
+            {
+                state_buffer_size   = nes_system_get_state_size(system);
+                state_buffer        = malloc(state_buffer_size);
+            }
+
+            nes_system_save_state(system, state_buffer, state_buffer_size);
+
+            write_save();
+        }
+        else if (key == SDL_SCANCODE_L)
+        {
+            read_save();
+
+            if (state_buffer)
+                nes_system_load_state(system, state_buffer, state_buffer_size);
+        }
+        else if (key == SDL_SCANCODE_R)
+        {
+            nes_system_reset(system);
         }
     }
 }
@@ -271,6 +335,7 @@ int main(int argc, char** argv)
     init_audio_ring_buf();
 
     snprintf(title, 256, "NESM - %s", rom_path);
+    snprintf(save_path, 1024, "%s_sav", rom_path);
 
     config.source_type = NES_SOURCE_FILE;
     config.source.file_path = rom_path;
@@ -363,7 +428,7 @@ int main(int argc, char** argv)
         }
 
         if (has_key_up)
-            handle_shortcut_key(key_up_scancode);
+            handle_shortcut_key(system, key_up_scancode);
 
         SDL_GetWindowSize(wnd, &w, &h);
         if (((float)w / (float)h) >= aspect_ratio)
@@ -404,6 +469,9 @@ int main(int argc, char** argv)
     nes_system_destroy(system);
     free(texture_buffer);
     free(audio_ring_buf.buffer);
+
+    if (state_buffer)
+        free(state_buffer);
 
     if (controller[0]) SDL_GameControllerClose(controller[0]);
     if (controller[1]) SDL_GameControllerClose(controller[1]);
