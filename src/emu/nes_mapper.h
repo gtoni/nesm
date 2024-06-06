@@ -44,9 +44,9 @@ static nes_mapper nes_mapper_get_NROM()
 
 typedef struct uxrom_mapper_state
 {
-    uint8_t* current_bank;
-    uint8_t* fixed_bank;
-    uint8_t  bank_mask;
+    size_t  current_bank_offset;
+    size_t  fixed_bank_offset;
+    uint8_t bank_mask;
 }uxrom_mapper_state;
 
 static void UxROM_init(nes_cartridge* cartridge)
@@ -54,8 +54,8 @@ static void UxROM_init(nes_cartridge* cartridge)
     const size_t bank_size = 16 * 1024;
     uxrom_mapper_state* state = (uxrom_mapper_state*)cartridge->mapper_state;
     size_t num_banks = cartridge->prg_rom_size / bank_size;
-    state->fixed_bank = cartridge->prg_rom + (num_banks - 1) * bank_size; 
-    state->current_bank = state->fixed_bank;
+    state->fixed_bank_offset = (num_banks - 1) * bank_size; 
+    state->current_bank_offset = state->fixed_bank_offset;
     if (num_banks < 16)
         state->bank_mask = 0x07;
     else
@@ -66,9 +66,9 @@ static uint8_t UxROM_read(nes_cartridge* cartridge, uint16_t address)
 {
     uxrom_mapper_state* state = (uxrom_mapper_state*)cartridge->mapper_state;
     if (address >= 0xC000)
-        return *(state->fixed_bank + (address - 0xC000));
+        return cartridge->prg_rom[state->fixed_bank_offset + (address - 0xC000)];
     else
-        return *(state->current_bank + (address - 0x8000));
+        return cartridge->prg_rom[state->current_bank_offset + (address - 0x8000)];
 }
 
 static void UxROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
@@ -77,7 +77,7 @@ static void UxROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data
     uxrom_mapper_state* state = (uxrom_mapper_state*)cartridge->mapper_state;
     if (UxROM_read(cartridge, address) == data)
     {
-        state->current_bank = cartridge->prg_rom + (data & state->bank_mask) * bank_size;
+        state->current_bank_offset = (data & state->bank_mask) * bank_size;
     }
 }
 
@@ -91,14 +91,14 @@ static nes_mapper nes_mapper_get_UxROM()
 
 typedef struct cnrom_mapper_state
 {
-    uint8_t* current_bank;
-    uint8_t  bank_mask;
+    size_t  current_bank_offset;
+    uint8_t bank_mask;
 }cnrom_mapper_state;
 
 static void CNROM_init(nes_cartridge* cartridge)
 {
     cnrom_mapper_state* state = (cnrom_mapper_state*)cartridge->mapper_state;
-    state->current_bank = cartridge->chr_rom;
+    state->current_bank_offset = 0;
     state->bank_mask = 0x3;
 }
 
@@ -106,13 +106,13 @@ static void CNROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data
 {
     const size_t bank_size = 8 * 1024;
     cnrom_mapper_state* state = (cnrom_mapper_state*)cartridge->mapper_state;
-    state->current_bank = cartridge->chr_rom + (data & state->bank_mask) * bank_size;
+    state->current_bank_offset = (data & state->bank_mask) * bank_size;
 }
 
 static uint8_t CNROM_read_chr(nes_cartridge* cartridge, uint16_t address)
 {
     cnrom_mapper_state* state = (cnrom_mapper_state*)cartridge->mapper_state;
-    return *(state->current_bank + address);
+    return cartridge->chr_rom[state->current_bank_offset + address];
 }
 
 static nes_mapper nes_mapper_get_CNROM()
@@ -129,10 +129,10 @@ typedef struct mmc1_mapper_state
     uint8_t  chr_bank_mode  : 1;
     uint8_t  write_enable   : 1;
     uint8_t  ram_enable     : 1;
-    uint8_t* fixed_bank;
-    uint8_t* current_bank;
-    uint8_t* chr_bank_low;
-    uint8_t* chr_bank_high;
+    size_t   fixed_bank_offset;
+    size_t   current_bank_offset;
+    size_t   chr_bank_low_offset;
+    size_t   chr_bank_high_offset;
     uint8_t  shift_reg;
     uint8_t  shift_count;
     uint8_t  ram[8192];
@@ -143,10 +143,10 @@ static void MMC1_init(nes_cartridge* cartridge)
     mmc1_mapper_state* state = (mmc1_mapper_state*)cartridge->mapper_state;
     state->bank_mode = 3;
     state->chr_bank_mode = 0;
-    state->fixed_bank = cartridge->prg_rom + cartridge->prg_rom_size - (16 * 1024);
-    state->current_bank = cartridge->prg_rom;
-    state->chr_bank_low = cartridge->chr_rom;
-    state->chr_bank_high = cartridge->chr_rom;
+    state->fixed_bank_offset    = cartridge->prg_rom_size - (16 * 1024);
+    state->current_bank_offset  = 0;
+    state->chr_bank_low_offset  = 0;
+    state->chr_bank_high_offset = 0;
     state->shift_reg = 0;
     state->shift_count = 0;
     state->write_enable = 1;
@@ -165,17 +165,17 @@ static uint8_t MMC1_read(nes_cartridge* cartridge, uint16_t address)
     {
         default:
         case 0: case 1:
-            return *(state->current_bank + (address - 0x8000));
+            return cartridge->prg_rom[state->current_bank_offset + (address - 0x8000)];
         case 2:
             if (address >= 0xC000)
-                return *(state->current_bank + (address - 0xC000));
+                return cartridge->prg_rom[state->current_bank_offset + (address - 0xC000)];
             else
-                return *(state->fixed_bank + (address - 0x8000));
+                return cartridge->prg_rom[state->fixed_bank_offset + (address - 0x8000)];
         case 3:
             if (address >= 0xC000)
-                return *(state->fixed_bank + (address - 0xC000));
+                return cartridge->prg_rom[state->fixed_bank_offset + (address - 0xC000)];
             else
-                return *(state->current_bank + (address - 0x8000));
+                return cartridge->prg_rom[state->current_bank_offset + (address - 0x8000)];
     }
 }
 
@@ -216,10 +216,10 @@ static void MMC1_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
                         default:
                         case 0: case 1:break;
                         case 2:
-                            state->fixed_bank = cartridge->prg_rom;
+                            state->fixed_bank_offset = 0;
                         break;
                         case 3:
-                            state->fixed_bank = cartridge->prg_rom + cartridge->prg_rom_size - (16 * 1024);
+                            state->fixed_bank_offset = cartridge->prg_rom_size - (16 * 1024);
                         break;
                     }
                 break;
@@ -227,17 +227,17 @@ static void MMC1_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
                 {
                     unsigned m = 1 - state->chr_bank_mode;
                     unsigned bank = (data & 0x1F) & ~m;
-                    state->chr_bank_low = cartridge->chr_rom + bank * (4 * 1024);
+                    state->chr_bank_low_offset = bank * (4 * 1024);
                 }
                 break;
                 case 2:
-                    state->chr_bank_high = cartridge->chr_rom + data * (4 * 1024);
+                    state->chr_bank_high_offset = data * (4 * 1024);
                 break;
                 case 3:
                 {
                     unsigned m = state->bank_mode < 2;
                     unsigned bank = (data & 0x0F) & ~m;
-                    state->current_bank = cartridge->prg_rom + bank * (16 * 1024);
+                    state->current_bank_offset = bank * (16 * 1024);
                     state->ram_enable = data & 0x10;
                 }
                 break;
@@ -254,9 +254,9 @@ static uint8_t MMC1_read_chr(nes_cartridge* cartridge, uint16_t address)
     mmc1_mapper_state* state = (mmc1_mapper_state*)cartridge->mapper_state;
     state->write_enable = 1;
     if (state->chr_bank_mode == 0 || address < 0x1000)
-        return *(state->chr_bank_low + address);
+        return cartridge->chr_rom[state->chr_bank_low_offset + address];
     else
-        return *(state->chr_bank_high + (address - 0x1000));
+        return cartridge->chr_rom[state->chr_bank_high_offset + (address - 0x1000)];
 }
 
 static nes_mapper nes_mapper_get_MMC1()
