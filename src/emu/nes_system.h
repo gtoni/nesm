@@ -52,6 +52,19 @@ typedef struct nes_audio_output
     uint32_t    sample_rate;
 } nes_audio_output;
 
+typedef enum nes_bus
+{
+    NES_BUS_CPU,
+    NES_BUS_PPU
+} nes_bus;
+
+typedef enum nes_bus_op
+{
+    NES_BUS_OP_READ,
+    NES_BUS_OP_READ_DMA,
+    NES_BUS_OP_WRITE
+} nes_bus_op;
+
 typedef enum nes_source_type
 {
     NES_SOURCE_FILE,
@@ -74,6 +87,7 @@ typedef struct nes_config
     nes_controller_state    (*input_callback)(int controller_id, void* client_data);
     void                    (*video_callback)(const nes_video_output* video_output, void* client_data);
     void                    (*audio_callback)(const nes_audio_output* audio_output, void* client_data);
+    void                    (*memory_callback)(nes_bus bus, nes_bus_op op, uint16_t address, uint8_t* data, void* client_data);
 } nes_config;
 
 typedef struct nes_system nes_system;
