@@ -128,6 +128,8 @@ size_t ring_buf_read(ring_buf_t* ring, void* dst, size_t dst_size)
 nes_controller_state on_nes_input(int controller_id, void* client)
 {
     nes_controller_state state;
+    memset(&state, 0, sizeof(nes_controller_state));
+
     if (controller_id == 0)
     {
         const uint8_t* keys = SDL_GetKeyboardState(0);
@@ -160,13 +162,9 @@ nes_controller_state on_nes_input(int controller_id, void* client)
             state.up    |= SDL_GameControllerGetAxis(controller[0], SDL_CONTROLLER_AXIS_LEFTY) < -CONTROLLER_DEADZONE;
             state.down  |= SDL_GameControllerGetAxis(controller[0], SDL_CONTROLLER_AXIS_LEFTY) > CONTROLLER_DEADZONE;
         }
-        return state;
     }
-    else
-    {
-        memset(&state, 0, sizeof(nes_controller_state));
-        return state;
-    }
+
+    return state;
 }
 
 void on_nes_video(const nes_video_output* video, void* client)
@@ -343,6 +341,7 @@ int main(int argc, char** argv)
     config.input_callback = &on_nes_input;
     config.video_callback = &on_nes_video;
     config.audio_callback = &on_nes_audio;
+    config.memory_callback = 0;
 
     system = nes_system_create(&config);
     if (!system)
