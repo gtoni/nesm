@@ -286,7 +286,8 @@ void handle_shortcut_key(nes_system* system, SDL_Scancode key)
                 state_buffer        = malloc(state_buffer_size);
             }
 
-            nes_system_save_state(system, state_buffer, state_buffer_size);
+            if (!nes_system_save_state(system, state_buffer, state_buffer_size))
+                fprintf(stderr, "Save state failed\n");
 
             write_save();
         }
@@ -295,7 +296,10 @@ void handle_shortcut_key(nes_system* system, SDL_Scancode key)
             read_save();
 
             if (state_buffer)
-                nes_system_load_state(system, state_buffer, state_buffer_size);
+            {
+                if (!nes_system_load_state(system, state_buffer, state_buffer_size))
+                    fprintf(stderr, "Load state failed\n");
+            }
         }
         else if (key == SDL_SCANCODE_R)
         {
