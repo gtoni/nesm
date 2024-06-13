@@ -52,18 +52,21 @@ typedef struct nes_audio_output
     uint32_t    sample_rate;
 } nes_audio_output;
 
-typedef enum nes_bus
+typedef enum nes_memory_type
 {
-    NES_BUS_CPU,
-    NES_BUS_PPU
-} nes_bus;
+    NES_MEMORY_TYPE_CPU,
+    NES_MEMORY_TYPE_PPU
+} nes_memory_type;
 
-typedef enum nes_bus_op
+typedef enum nes_memory_op
 {
-    NES_BUS_OP_READ,
-    NES_BUS_OP_READ_DMA,
-    NES_BUS_OP_WRITE
-} nes_bus_op;
+    NES_MEMORY_OP_READ,
+    NES_MEMORY_OP_READ_DMA,
+    NES_MEMORY_OP_WRITE
+} nes_memory_op;
+
+#define NES_MEMORY_SIZE_CPU 0xFFFF
+#define NES_MEMORY_SIZE_PPU 0x3FFF
 
 typedef enum nes_source_type
 {
@@ -87,7 +90,7 @@ typedef struct nes_config
     nes_controller_state    (*input_callback)(int controller_id, void* client_data);
     void                    (*video_callback)(const nes_video_output* video_output, void* client_data);
     void                    (*audio_callback)(const nes_audio_output* audio_output, void* client_data);
-    void                    (*memory_callback)(nes_bus bus, nes_bus_op op, uint16_t address, uint8_t* data, void* client_data);
+    void                    (*memory_callback)(nes_memory_type memory_type, nes_memory_op op, uint16_t address, uint8_t* data, void* client_data);
 } nes_config;
 
 typedef struct nes_system nes_system;
@@ -99,6 +102,8 @@ void        nes_system_reset(nes_system* system);
 size_t      nes_system_get_state_size(nes_system* system);
 int         nes_system_save_state(nes_system* system, void* buffer, size_t buffer_size);
 int         nes_system_load_state(nes_system* system, const void* buffer, size_t buffer_size);
+
+void        nes_system_read_memory(nes_system* system, nes_memory_type memory_type, uint16_t address, void* buffer, size_t buffer_size);
 
 void        nes_system_tick(nes_system* system);
 void        nes_system_frame(nes_system* system);
