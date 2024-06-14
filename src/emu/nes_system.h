@@ -55,7 +55,8 @@ typedef struct nes_audio_output
 typedef enum nes_memory_type
 {
     NES_MEMORY_TYPE_CPU,
-    NES_MEMORY_TYPE_PPU
+    NES_MEMORY_TYPE_PPU,
+    NES_MEMORY_TYPE_OAM
 } nes_memory_type;
 
 typedef enum nes_memory_op
@@ -65,8 +66,9 @@ typedef enum nes_memory_op
     NES_MEMORY_OP_WRITE
 } nes_memory_op;
 
-#define NES_MEMORY_SIZE_CPU 0xFFFF
-#define NES_MEMORY_SIZE_PPU 0x3FFF
+#define NES_MEMORY_SIZE_CPU 0x10000
+#define NES_MEMORY_SIZE_PPU 0x4000
+#define NES_MEMORY_SIZE_OAM 0x100
 
 typedef enum nes_source_type
 {
