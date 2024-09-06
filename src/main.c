@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <assert.h>
 #include "emu/nes_system.h"
 
@@ -30,8 +30,8 @@ void write_save()
 {
     if (state_buffer)
     {
-        FILE* file;
-        if (fopen_s(&file, save_path, "wb") == 0)
+        FILE* file = fopen(save_path, "wb");
+        if (file)
         {
             fwrite(state_buffer, 1, state_buffer_size, file);
             fclose(file);
@@ -43,8 +43,8 @@ void read_save()
 {
     if (!state_buffer)
     {
-        FILE* file;
-        if (fopen_s(&file, save_path, "rb") == 0)
+        FILE* file = fopen(save_path, "rb");
+        if (file)
         {
             fseek(file, 0, SEEK_END);
             state_buffer_size = ftell(file);
@@ -407,7 +407,7 @@ int main(int argc, char** argv)
         uint64_t begin_frame = SDL_GetPerformanceCounter();
 
         int w, h, has_key_up = 0;
-        SDL_Scancode key_up_scancode = 0;
+        SDL_Scancode key_up_scancode = (SDL_Scancode)0;
         SDL_Rect dstrect;
         SDL_Event evt;
         float aspect_ratio = (float)video_srcrect.w / (float)video_srcrect.h;

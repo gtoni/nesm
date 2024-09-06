@@ -127,8 +127,13 @@ static nes_cartridge* nes_rom_load_cartridge(const char* path)
 {
     nes_cartridge* cartridge = 0;
 
+#if _WIN32
     FILE* rom_file = NULL;
     if (fopen_s(&rom_file, path, "rb") == 0)
+#else
+    FILE* rom_file = fopen(path, "rb");
+    if (rom_file)
+#endif
     {
         void*   rom_file_data = 0;
         size_t  rom_file_size = 0; 

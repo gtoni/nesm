@@ -607,8 +607,19 @@ static uint8_t nes_system_read_ppu_byte(nes_system* system, uint16_t address)
     }
     else
     {
-        address = get_ppu_nametable_address(system, address);
-        return system->state.vram[address];
+        if (address < 0x3F00)
+        {
+            address = get_ppu_nametable_address(system, address);
+            return system->state.vram[address];
+        }
+        else if (address <= 0x3FFF)
+        {
+            uint8_t palette_index = address & 0x1F;
+            if ((palette_index & 0x13) == 0x10)
+                palette_index &= ~0x10;
+
+            return system->state.ppu.palettes[palette_index];
+        }
     }
 
     return 0; 
