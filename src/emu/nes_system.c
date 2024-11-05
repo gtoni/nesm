@@ -428,6 +428,9 @@ static void cpu_tick(nes_system* system)
 {
     nes_system_state* state = &system->state;
 
+    if (system->config.cpu_callback && (uint8_t)state->cpu.cycle == 0)
+        system->config.cpu_callback(state->cpu.address, &state->cpu, system->config.client_data);
+
     state->cpu = cpu_execute(state->cpu);
 
     cpu_mem_rw(system);
