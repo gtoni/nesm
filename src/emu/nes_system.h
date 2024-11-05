@@ -9,6 +9,8 @@
 extern "C" {
 #endif
 
+typedef struct cpu_state_ cpu_state;
+
 typedef struct nes_controller_state
 {
     uint8_t right   : 1;
@@ -93,6 +95,7 @@ typedef struct nes_config
     void                    (*video_callback)(const nes_video_output* video_output, void* client_data);
     void                    (*audio_callback)(const nes_audio_output* audio_output, void* client_data);
     void                    (*memory_callback)(nes_memory_type memory_type, nes_memory_op op, uint16_t address, uint8_t* data, void* client_data);
+    void                    (*cpu_callback)(uint16_t address, cpu_state* state, void* client_data);
 } nes_config;
 
 typedef struct nes_system nes_system;

@@ -346,6 +346,7 @@ int main(int argc, char** argv)
     config.video_callback = &on_nes_video;
     config.audio_callback = &on_nes_audio;
     config.memory_callback = 0;
+    config.cpu_callback = 0;
 
     system = nes_system_create(&config);
     if (!system)
