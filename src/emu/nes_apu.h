@@ -5,7 +5,7 @@
 #include <memory.h>
 #include <assert.h>
 
-#define NES_APU_MAX_SAMPLES             4096
+#define NES_APU_MAX_SAMPLES             4000
 
 #define NES_APU_PULSE1_REG0_ID          0x4000
 #define NES_APU_PULSE1_REG1_ID          0x4001
