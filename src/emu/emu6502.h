@@ -23,8 +23,10 @@ typedef struct cpu_state_
 
     uint16_t address;         
     uint8_t  rw_mode;
-    uint8_t  irq    : 1;
-    uint8_t  nmi    : 1;
+    uint8_t  irq            : 1;
+    uint8_t  nmi            : 1;
+    uint8_t  has_interrupt  : 1;
+    uint8_t  interrupt_seq  : 1;
     uint8_t  data;
     uint8_t  temp;
 
@@ -55,6 +57,8 @@ enum cpu_status_flags
 
 #define _CPU_SET_INSTRUCTION(cpu, i)   (cpu.cycle = (cpu.cycle & 0x00FF) | (i << 8))
 #define _CPU_GET_INSTRUCTION(cpu)      ((cpu.cycle >> 8) & 0xFF)
+
+#define _CPU_POLL_INTERRUPTS(cpu)      (cpu.nmi || (cpu.irq && !(cpu.P & CPU_STATUS_FLAG_IRQDISABLE)))
 
 #define _CPU_COND_BRANCH(cpu, cond) if (cond) {\
     cpu.address = cpu.PC + (int8_t)cpu.data;\
@@ -163,6 +167,9 @@ static cpu_state cpu_execute(cpu_state state)
     uint8_t cycle = (uint8_t)state.cycle++;
     uint_fast32_t instruction = _CPU_GET_INSTRUCTION(state);
 
+    int interrupt = state.has_interrupt;
+    state.has_interrupt = _CPU_POLL_INTERRUPTS(state);
+
     if (cycle == 0)
     {
         _CPU_SET_INSTRUCTION(state, state.data);
@@ -171,7 +178,7 @@ static cpu_state cpu_execute(cpu_state state)
         switch (state.data)
         {
             case IC_BRK:
-                if (!(state.nmi || (state.irq && !(state.P & CPU_STATUS_FLAG_IRQDISABLE))))
+                if (!state.interrupt_seq)
                 {
                     state.temp = 0xFE;
                     state.rw_mode = CPU_RW_MODE_READ;
@@ -188,9 +195,13 @@ static cpu_state cpu_execute(cpu_state state)
                 state.address = ((uint8_t)state.S--) + 0x0100;
                 state.data = state.A;
                 return state;
-            case IC_RTS: case IC_RTI: case IC_PLP: case IC_PLA:
+            case IC_RTS: case IC_RTI:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address = ((uint8_t)++state.S) + 0x0100;
+                return state;
+            case IC_PLP: case IC_PLA:
+                state.rw_mode = CPU_RW_MODE_READ; // Dummy read
+                state.address = state.PC;
                 return state;
             case IC_INX: _CPU_SET_REG_X(state, state.X + 1); return state;
             case IC_INY: _CPU_SET_REG_Y(state, state.Y + 1); return state;
@@ -461,12 +472,9 @@ static cpu_state cpu_execute(cpu_state state)
                 state.address = ((uint8_t)++state.S) + 0x0100;
                 return state;
             case IC_PLA:
-                state.rw_mode = CPU_RW_MODE_NONE;
-                _CPU_SET_REG_A(state, state.data);
-                return state;
             case IC_PLP:
-                state.rw_mode = CPU_RW_MODE_NONE;
-                _CPU_SET_REG_P(state, state.data & ~CPU_STATUS_FLAG_BREAK);
+                state.rw_mode = CPU_RW_MODE_READ;
+                state.address = ((uint8_t)++state.S) + 0x0100;
                 return state;
             case IC_PHA:
             case IC_PHP:
@@ -651,7 +659,13 @@ static cpu_state cpu_execute(cpu_state state)
                 state.temp = state.data;
                 return state;
             case IC_PLA:
+                state.rw_mode = CPU_RW_MODE_NONE;
+                _CPU_SET_REG_A(state, state.data);
+                return state;
             case IC_PLP:
+                state.rw_mode = CPU_RW_MODE_NONE;
+                _CPU_SET_REG_P(state, state.data & ~CPU_STATUS_FLAG_BREAK);
+                return state;
             case IC_ROL_ZP:
             case IC_ROL_ZP_X:
             case IC_ROR_ZP:
@@ -693,20 +707,22 @@ static cpu_state cpu_execute(cpu_state state)
         {
             case IC_BRK:
                 state.data = state.P;
-                if (state.nmi)
+                if (state.interrupt_seq)
                 {
-                    state.nmi = 0;
-                    state.temp = 0xFA;
-                }
-                else if (state.irq && !(state.P & CPU_STATUS_FLAG_IRQDISABLE))
-                {
-                    state.temp = 0xFE;
+                    if (state.nmi)
+                    {
+                        state.nmi = 0;
+                        state.temp = 0xFA;
+                    }
+                    else
+                    {
+                        state.temp = 0xFE;
+                    }
                 }
                 else
                 {
                     state.data |= CPU_STATUS_FLAG_BREAK;
                 }
-                _CPU_SET_REG_P(state, state.P | CPU_STATUS_FLAG_IRQDISABLE);
                 state.address = ((uint8_t)state.S--) + 0x0100;
                 return state;
 
@@ -917,6 +933,7 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_BRK:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address = 0xFF00 | state.temp;
+                _CPU_SET_REG_P(state, state.P | CPU_STATUS_FLAG_IRQDISABLE);
                 return state;
 
              case IC_LDA_ABS_X: case IC_LDA_ABS_Y:
@@ -1121,8 +1138,11 @@ static cpu_state cpu_execute(cpu_state state)
         }
     }
 
-    if (state.nmi || (state.irq && !(state.P & CPU_STATUS_FLAG_IRQDISABLE)))
+    state.interrupt_seq = 0;
+
+    if (interrupt)
     {
+        state.interrupt_seq = 1;
         state.rw_mode = CPU_RW_MODE_NONE;
         state.cycle = 0;
         state.data = 0;
