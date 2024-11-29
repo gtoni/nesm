@@ -524,7 +524,7 @@ void nes_system_reset(nes_system* system)
     nes_ppu_reset(&state->ppu);
     nes_apu_reset(&state->apu);
     state->cpu = cpu_reset();
-    state->cpu_odd_cycle = 0;
+    state->cpu_odd_cycle = 1;
     state->oam_dma = 0;
     state->oam_dma_data = 0;
     state->oam_dma_cycle = 0;
