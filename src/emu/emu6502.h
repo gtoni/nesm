@@ -60,6 +60,8 @@ enum cpu_status_flags
 
 #define _CPU_COND_BRANCH(cpu, cond) if (cond) {\
     cpu.address = cpu.PC + (int8_t)cpu.data;\
+    if (state.irq_phase0 && !irq_phase1)\
+        state.irq_phase0 = 0;\
     return cpu;\
 }
 
@@ -67,7 +69,7 @@ enum cpu_status_flags
     int page_cross = ((cpu.address & 0xFF00) != (cpu.PC & 0xFF00));\
     cpu.PC = cpu.address;\
     if (page_cross) return cpu;\
-}
+} 
 
 #define _CPU_CHECK_PAGE_CROSS(cpu) \
     if (cpu.temp) {\
