@@ -264,7 +264,7 @@ static void ppu_tick(nes_system* system)
     
     system->framebuffer[state->ppu.scanline * SCANLINE_WIDTH + state->ppu.dot] = state->ppu.color_out;
    
-    if (system->config.video_callback && state->ppu.scanline == (LAST_RENDER_SCANLINE + 1) && state->ppu.dot == 0)
+    if (system->config.video_callback && state->ppu.scanline == (RENDER_END_SCANLINE + 1) && state->ppu.dot == 0)
     {
         nes_video_output video_output;
         video_output.framebuffer = (nes_pixel*)(system->framebuffer + 2 + (NES_FRAMEBUFFER_ROW_STRIDE * 8));
@@ -661,9 +661,9 @@ void nes_system_tick(nes_system* system)
     ppu_tick(system);
     ppu_tick(system);
 
-    apu_tick(system);
-
     state->cpu.irq = state->apu.frame_interrupt | state->apu.dmc.interrupt;
+
+    apu_tick(system);
 
     if (!had_vbl && state->ppu.vbl)
         state->cpu.nmi = 1;

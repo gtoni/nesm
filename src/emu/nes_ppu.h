@@ -8,11 +8,11 @@
 #define SCANLINE_WIDTH          341
 #define TOTAL_SCANLINES         262
 
-#define VBLANK_SCANLINES        20
-#define PRE_RENDER_SCANLINE     TOTAL_SCANLINES - 1
-#define FIRST_RENDER_SCANLINE   0
-#define LAST_RENDER_SCANLINE    TOTAL_SCANLINES - VBLANK_SCANLINES - 2
-#define VBLANK_BEGIN_SCANLINE   LAST_RENDER_SCANLINE + 1
+#define PRE_RENDER_SCANLINE     261
+#define RENDER_BEGIN_SCANLINE   0
+#define RENDER_END_SCANLINE     240
+#define VBLANK_BEGIN_SCANLINE   241
+#define VBLANK_END_SCANLINE     261
 
 enum NES_PPU_REG_RW_MODE 
 { 
@@ -161,6 +161,7 @@ typedef struct nes_ppu
 
     nes_ppu_ctrl_reg     ctrl;
     nes_ppu_render_mask  render_mask;
+    nes_ppu_render_mask  next_render_mask;
     nes_ppu_status_reg   status;
     uint8_t              oam_address;
     uint16_t             vram_address;
@@ -181,8 +182,8 @@ typedef struct nes_ppu
     uint8_t         palettes[32];
 } nes_ppu;
 
-#define _NES_PPU_IS_RENDERING(ppu) ((ppu->scanline < LAST_RENDER_SCANLINE || ppu->scanline == PRE_RENDER_SCANLINE) &&\
-                               (ppu->render_mask & NES_PPU_RENDER_MASK_RENDER))
+#define _NES_PPU_IS_RENDERING(ppu) ((ppu->scanline < RENDER_END_SCANLINE || ppu->scanline == PRE_RENDER_SCANLINE) &&\
+                                    (ppu->render_mask & NES_PPU_RENDER_MASK_RENDER))
 
 #define _NES_PPU_COLOR_BLACK 15
 
@@ -200,11 +201,30 @@ static void nes_ppu_reset(nes_ppu* ppu)
 
 static void nes_ppu_execute(nes_ppu* __restrict ppu)
 {
+    nes_ppu_render_mask next_render_mask = ppu->next_render_mask;
+
     // Update dot and scanline
     if (++ppu->dot >= SCANLINE_WIDTH)
     {
         ppu->scanline = (ppu->scanline + 1) % TOTAL_SCANLINES;
         ppu->dot = 0;
+    }
+
+    ppu->vbl = ppu->status.vblank_started && ppu->ctrl.generate_nmi;
+
+    if (ppu->scanline == VBLANK_BEGIN_SCANLINE)
+    {
+        if (ppu->dot == 0)      ppu->pre_vblank = 1;
+        else if (ppu->dot == 1) ppu->status.vblank_started = ppu->pre_vblank;
+        else if (ppu->dot > 2)  ppu->vbl = ppu->status.vblank_started && ppu->ctrl.generate_nmi;
+    }
+    else if (ppu->scanline == PRE_RENDER_SCANLINE && ppu->dot == 1)
+    {
+        // Clear VBlank, Sprite 0 Hit, Sprite overflow and toggle odd/even flag
+        ppu->status.vblank_started = 0;
+        ppu->status.sprite_0_hit = 0;
+        ppu->status.sprite_overflow = 0;
+        ppu->is_even_frame = !ppu->is_even_frame;
     }
 
     // I/O:
@@ -237,7 +257,8 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             break;
             case NES_PPU_MASK_REG_ID:   // write-only
             {
-                if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_WRITE)  ppu->render_mask = (nes_ppu_render_mask)ppu->reg_data;
+                if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_WRITE)
+                    next_render_mask = (nes_ppu_render_mask)ppu->reg_data;
             }
             break;
             case NES_PPU_STATUS_REG_ID: // read-only
@@ -379,16 +400,8 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
     }
 
     // Rendering
-  
-    if (ppu->scanline == PRE_RENDER_SCANLINE && ppu->dot == 1)
-    {
-        // Clear VBlank, Sprite 0 Hit, Sprite overflow and toggle odd/even flag
-        ppu->status.vblank_started = 0;
-        ppu->status.sprite_0_hit = 0;
-        ppu->status.sprite_overflow = 0;
-        ppu->is_even_frame = !ppu->is_even_frame;
-    }
-    else if ((ppu->scanline < LAST_RENDER_SCANLINE || ppu->scanline == PRE_RENDER_SCANLINE) && (ppu->render_mask & NES_PPU_RENDER_MASK_RENDER))
+
+    if (_NES_PPU_IS_RENDERING(ppu))
     {
         const unsigned sprite_height = 8 << ppu->ctrl.sprite_size;
 
@@ -547,7 +560,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             }
 
             // Sprite evaluation
-            if (ppu->scanline >= FIRST_RENDER_SCANLINE && ppu->dot < 257)
+            if (ppu->scanline >= RENDER_BEGIN_SCANLINE && ppu->dot < 257)
             {
                 if (ppu->dot < 65)
                 {
@@ -702,13 +715,9 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             }
         }
     }
-    else if (ppu->scanline == VBLANK_BEGIN_SCANLINE)
-    {
-        if (ppu->dot == 0)      ppu->pre_vblank = 1;
-        else if (ppu->dot == 1) ppu->status.vblank_started = ppu->pre_vblank;
-    }
- 
-    ppu->vbl = ppu->status.vblank_started && ppu->ctrl.generate_nmi;
+
+    ppu->render_mask = ppu->next_render_mask;
+    ppu->next_render_mask = next_render_mask;
 }
 
 #endif

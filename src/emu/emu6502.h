@@ -23,10 +23,10 @@ typedef struct cpu_state_
 
     uint16_t address;         
     uint8_t  rw_mode;
-    uint8_t  irq            : 1;
-    uint8_t  nmi            : 1;
-    uint8_t  has_interrupt  : 1;
-    uint8_t  interrupt_seq  : 1;
+    uint8_t  irq         : 1;
+    uint8_t  nmi         : 1;
+    uint8_t  irq_phase0  : 1;
+    uint8_t  nmi_phase0  : 1;
     uint8_t  data;
     uint8_t  temp;
 
@@ -57,8 +57,6 @@ enum cpu_status_flags
 
 #define _CPU_SET_INSTRUCTION(cpu, i)   (cpu.cycle = (cpu.cycle & 0x00FF) | (i << 8))
 #define _CPU_GET_INSTRUCTION(cpu)      ((cpu.cycle >> 8) & 0xFF)
-
-#define _CPU_POLL_INTERRUPTS(cpu)      (cpu.nmi || (cpu.irq && !(cpu.P & CPU_STATUS_FLAG_IRQDISABLE)))
 
 #define _CPU_COND_BRANCH(cpu, cond) if (cond) {\
     cpu.address = cpu.PC + (int8_t)cpu.data;\
@@ -158,7 +156,8 @@ static cpu_state cpu_reset()
     _CPU_SET_REG_P(state, CPU_STATUS_FLAG_IRQDISABLE);
     state.S = 0xFF;
     state.temp = 0xFC;
-    state.cycle = 1;
+    state.cycle = 0;
+    state.data = 0;
     return state; 
 }
 
@@ -167,8 +166,12 @@ static cpu_state cpu_execute(cpu_state state)
     uint8_t cycle = (uint8_t)state.cycle++;
     uint_fast32_t instruction = _CPU_GET_INSTRUCTION(state);
 
-    int interrupt = state.has_interrupt;
-    state.has_interrupt = _CPU_POLL_INTERRUPTS(state);
+    int irq_phase1 = state.irq_phase0;
+    state.irq_phase0 = state.irq && !(state.P & CPU_STATUS_FLAG_IRQDISABLE);
+
+    int nmi_phase1 = state.nmi_phase0;
+    if (state.nmi_phase0 == 0 && state.nmi)
+        state.nmi_phase0 = 1;
 
     if (cycle == 0)
     {
@@ -178,9 +181,8 @@ static cpu_state cpu_execute(cpu_state state)
         switch (state.data)
         {
             case IC_BRK:
-                if (!state.interrupt_seq)
+                if (!state.temp)
                 {
-                    state.temp = 0xFE;
                     state.rw_mode = CPU_RW_MODE_READ;
                     state.address = state.PC++;
                 }
@@ -707,22 +709,20 @@ static cpu_state cpu_execute(cpu_state state)
         {
             case IC_BRK:
                 state.data = state.P;
-                if (state.interrupt_seq)
-                {
-                    if (state.nmi)
-                    {
-                        state.nmi = 0;
-                        state.temp = 0xFA;
-                    }
-                    else
-                    {
-                        state.temp = 0xFE;
-                    }
-                }
-                else
-                {
+                if (state.temp == 0 || state.temp == 0xFC)
                     state.data |= CPU_STATUS_FLAG_BREAK;
+
+                if (state.nmi_phase0)
+                {
+                    state.nmi = 0;
+                    state.nmi_phase0 = 0;
+                    state.temp = 0xFA;
                 }
+                else if (state.nmi_phase0 || state.temp == 0)
+                {
+                    state.temp = 0xFE;
+                }
+
                 state.address = ((uint8_t)state.S--) + 0x0100;
                 return state;
 
@@ -1130,6 +1130,7 @@ static cpu_state cpu_execute(cpu_state state)
         {
             case IC_BRK:
                 state.PC = (state.data << 8) | state.PC;
+                nmi_phase1 = 0;
                 break;
             case IC_IL_DCP_IND_X: case IC_IL_DCP_IND_Y:
             case IC_IL_ISB_IND_X: case IC_IL_ISB_IND_Y:
@@ -1138,20 +1139,21 @@ static cpu_state cpu_execute(cpu_state state)
         }
     }
 
-    state.interrupt_seq = 0;
-
-    if (interrupt)
+    if (nmi_phase1 || irq_phase1)
     {
-        state.interrupt_seq = 1;
         state.rw_mode = CPU_RW_MODE_NONE;
-        state.cycle = 0;
         state.data = 0;
-        return state;
+        state.cycle = 0;
+        state.temp = 0xFE;
+    }
+    else
+    {
+        state.rw_mode = CPU_RW_MODE_READ;
+        state.address = state.PC++;
+        state.cycle = 0;
+        state.temp = 0;
     }
 
-    state.cycle = 0;
-    state.rw_mode = CPU_RW_MODE_READ;
-    state.address = state.PC++;
     return state;
 }
 
