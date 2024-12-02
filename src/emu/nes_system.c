@@ -1,4 +1,5 @@
 #include <memory.h>
+#include <stdlib.h>
 #include "nes_system.h"
 #include "nes_rom.h"
 #include "nes_ppu.h"
@@ -532,6 +533,9 @@ void nes_system_reset(nes_system* system)
     state->oam_dma_dst_address = 0;
     state->controller_input0 = 0;
     state->controller_input1 = 1;
+
+    for (uint32_t i = 0; i < 0x800; ++i)
+        state->ram[i] = (uint8_t)rand();
 }
 
 size_t nes_system_get_state_size(nes_system *system)
