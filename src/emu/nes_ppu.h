@@ -108,13 +108,12 @@ typedef struct nes_ppu
 
     uint8_t reg_rw_mode;
     uint8_t reg_data;
-    uint8_t reg_addr : 3;
-    uint8_t r : 1;
-    uint8_t w : 1;
+    uint8_t reg_addr    : 3;
+    uint8_t r           : 1;
+    uint8_t w           : 1;
+    uint8_t vbl         : 1;
 
     uint8_t color_out;
-
-    uint8_t vbl : 1;
 
     unsigned is_even_frame;
 
@@ -157,7 +156,7 @@ typedef struct nes_ppu
     uint8_t         cpu_read_buffer;
     int             update_cpu_read_buffer;
 
-    int             pre_vblank;
+    uint8_t         pre_vblank;
 
     nes_ppu_ctrl_reg     ctrl;
     nes_ppu_render_mask  render_mask;

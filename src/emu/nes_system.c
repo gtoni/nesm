@@ -482,7 +482,7 @@ static void apu_tick(nes_system* system)
 
 nes_system* nes_system_create(nes_config* config)
 {
-    nes_cartridge* cartridge;
+    nes_cartridge* cartridge = 0;
 
     if (config->source_type == NES_SOURCE_FILE)
     {
