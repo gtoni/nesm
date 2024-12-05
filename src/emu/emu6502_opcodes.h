@@ -243,5 +243,28 @@
 #define IC_IL_SLO_IND_X      0x03
 #define IC_IL_SLO_IND_Y      0x13
 
+#define IC_IL_RLA_ABS        0x2F
+#define IC_IL_RLA_ABS_X      0x3F
+#define IC_IL_RLA_ABS_Y      0x3B
+#define IC_IL_RLA_ZP         0x27
+#define IC_IL_RLA_ZP_X       0x37
+#define IC_IL_RLA_IND_X      0x23
+#define IC_IL_RLA_IND_Y      0x33
+
+#define IC_IL_SRE_ABS        0x4F
+#define IC_IL_SRE_ABS_X      0x5F
+#define IC_IL_SRE_ABS_Y      0x5B
+#define IC_IL_SRE_ZP         0x47
+#define IC_IL_SRE_ZP_X       0x57
+#define IC_IL_SRE_IND_X      0x43
+#define IC_IL_SRE_IND_Y      0x53
+
+#define IC_IL_RRA_ABS        0x6F
+#define IC_IL_RRA_ABS_X      0x7F
+#define IC_IL_RRA_ABS_Y      0x7B
+#define IC_IL_RRA_ZP         0x67
+#define IC_IL_RRA_ZP_X       0x77
+#define IC_IL_RRA_IND_X      0x63
+#define IC_IL_RRA_IND_Y      0x73
 
 #endif
