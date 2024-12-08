@@ -205,6 +205,7 @@
 #define IC_IL_NOP_IMP3       0xC2
 #define IC_IL_NOP_IMP4       0xE2
 
+#define IC_IL_LAX_IMM        0xAB
 #define IC_IL_LAX_ABS        0xAF
 #define IC_IL_LAX_ABS_Y      0xBF
 #define IC_IL_LAX_ZP         0xA7
@@ -266,5 +267,14 @@
 #define IC_IL_RRA_ZP_X       0x77
 #define IC_IL_RRA_IND_X      0x63
 #define IC_IL_RRA_IND_Y      0x73
+
+#define IC_IL_ANC_IMM        0x0B
+#define IC_IL_AAC_IMM        0x2B
+#define IC_IL_ALR_IMM        0x4B
+#define IC_IL_ARR_IMM        0x6B
+#define IC_IL_AXS_IMM        0xCB
+
+#define IC_IL_SHY_ABS_X      0x9C
+#define IC_IL_SHX_ABS_Y      0x9E
 
 #endif

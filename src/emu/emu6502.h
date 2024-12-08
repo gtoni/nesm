@@ -184,6 +184,29 @@ enum cpu_status_flags
     _CPU_ADC(cpu);\
 }
 
+#define _CPU_ANC(cpu) {\
+    _CPU_SET_REG_A(cpu, cpu.A & cpu.data);\
+    _CPU_SET_REG_P(cpu, (cpu.P & ~CPU_STATUS_FLAG_CARRY) | (cpu.P >> 7));\
+}
+
+#define _CPU_ALR(cpu) {\
+    _CPU_SET_REG_A(cpu, cpu.A & cpu.data);\
+    _CPU_LSR(cpu, cpu.A); \
+}
+
+#define _CPU_ARR(cpu) {\
+    _CPU_SET_REG_A(cpu, cpu.A & cpu.data);\
+    cpu.A = (cpu.A >> 1) | (cpu.P << 7);\
+    _CPU_SET_REG_P(cpu, (cpu.P & 0xBE) | ((cpu.A ^ (cpu.A << 1)) & 0x40) | ((cpu.A >> 6) & 1));\
+    _CPU_UPDATE_NZ(cpu, cpu.A);\
+}
+
+#define _CPU_AXS(cpu) {\
+    uint8_t tmp = cpu.A & cpu.X;\
+    _CPU_SET_REG_X(cpu, (tmp - cpu.data));\
+    _CPU_SET_REG_P(cpu, (cpu.P & 0xFE) | (uint8_t)(tmp >= cpu.data));\
+}
+
 static cpu_state cpu_reset()
 {
     cpu_state state;
@@ -279,17 +302,19 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_INC_ABS: case IC_INC_ABS_X: case IC_INC_ZP: case IC_INC_ZP_X:
             case IC_ASL_ABS: case IC_ASL_ABS_X: case IC_ASL_ZP: case IC_ASL_ZP_X: 
             case IC_LSR_ABS: case IC_LSR_ABS_X: case IC_LSR_ZP: case IC_LSR_ZP_X: 
-            case IC_AND_IMM: case IC_AND_ABS: case IC_AND_ABS_X: case IC_AND_ABS_Y: case IC_AND_ZP: case IC_AND_ZP_X: case IC_AND_IND_X: case IC_AND_IND_Y: 
-            case IC_ORA_IMM: case IC_ORA_ABS: case IC_ORA_ABS_X: case IC_ORA_ABS_Y: case IC_ORA_ZP: case IC_ORA_ZP_X: case IC_ORA_IND_X: case IC_ORA_IND_Y: 
+            case IC_AND_IMM: case IC_AND_ABS: case IC_AND_ABS_X: case IC_AND_ABS_Y: case IC_AND_ZP: case IC_AND_ZP_X: case IC_AND_IND_X: case IC_AND_IND_Y:
+            case IC_ORA_IMM: case IC_ORA_ABS: case IC_ORA_ABS_X: case IC_ORA_ABS_Y: case IC_ORA_ZP: case IC_ORA_ZP_X: case IC_ORA_IND_X: case IC_ORA_IND_Y:
             case IC_EOR_IMM: case IC_EOR_ABS: case IC_EOR_ABS_X: case IC_EOR_ABS_Y: case IC_EOR_ZP: case IC_EOR_ZP_X: case IC_EOR_IND_X: case IC_EOR_IND_Y:
-            case IC_ADC_IMM: case IC_ADC_ABS: case IC_ADC_ABS_X: case IC_ADC_ABS_Y: case IC_ADC_ZP: case IC_ADC_ZP_X: case IC_ADC_IND_X: case IC_ADC_IND_Y: 
+            case IC_ADC_IMM: case IC_ADC_ABS: case IC_ADC_ABS_X: case IC_ADC_ABS_Y: case IC_ADC_ZP: case IC_ADC_ZP_X: case IC_ADC_IND_X: case IC_ADC_IND_Y:
             case IC_SBC_IMM: case IC_SBC_ABS: case IC_SBC_ABS_X: case IC_SBC_ABS_Y: case IC_SBC_ZP: case IC_SBC_ZP_X: case IC_SBC_IND_X: case IC_SBC_IND_Y:
             case IC_CMP_IMM: case IC_CMP_ABS: case IC_CMP_ABS_X: case IC_CMP_ABS_Y: case IC_CMP_ZP: case IC_CMP_ZP_X: case IC_CMP_IND_X: case IC_CMP_IND_Y:
-            case IC_CPX_IMM: case IC_CPX_ABS: case IC_CPX_ZP: 
+            case IC_CPX_IMM: case IC_CPX_ABS: case IC_CPX_ZP:
             case IC_CPY_IMM: case IC_CPY_ABS: case IC_CPY_ZP:
-            case IC_JSR:    
-            case IC_IL_LAX_ABS: case IC_IL_LAX_ABS_Y: case IC_IL_LAX_ZP: case IC_IL_LAX_ZP_Y: case IC_IL_LAX_IND_X: case IC_IL_LAX_IND_Y:
+            case IC_JSR:
+            case IC_IL_ANC_IMM: case IC_IL_AAC_IMM: case IC_IL_ALR_IMM: case IC_IL_ARR_IMM: case IC_IL_AXS_IMM:
+            case IC_IL_LAX_IMM: case IC_IL_LAX_ABS: case IC_IL_LAX_ABS_Y: case IC_IL_LAX_ZP: case IC_IL_LAX_ZP_Y: case IC_IL_LAX_IND_X: case IC_IL_LAX_IND_Y:
             case IC_IL_SAX_ABS: case IC_IL_SAX_ZP: case IC_IL_SAX_ZP_Y: case IC_IL_SAX_IND_X:
+            case IC_IL_SHY_ABS_X: case IC_IL_SHX_ABS_Y:
             case IC_IL_SBC_IMM:
             case IC_IL_NOP_ZP0: case IC_IL_NOP_ZP1: case IC_IL_NOP_ZP2:
             case IC_IL_NOP_ABS:
@@ -330,6 +355,12 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_LDA_IMM: _CPU_SET_REG_A(state, state.data); break;
             case IC_LDX_IMM: _CPU_SET_REG_X(state, state.data); break;
             case IC_LDY_IMM: _CPU_SET_REG_Y(state, state.data); break;
+            case IC_IL_LAX_IMM: _CPU_LAX(state); break;
+            case IC_IL_ANC_IMM: 
+            case IC_IL_AAC_IMM: _CPU_ANC(state); break;
+            case IC_IL_ALR_IMM: _CPU_ALR(state); break;
+            case IC_IL_ARR_IMM: _CPU_ARR(state); break;
+            case IC_IL_AXS_IMM: _CPU_AXS(state); break;
             case IC_IL_SBC_IMM:
             case IC_SBC_IMM: _CPU_SBC(state); break;
             case IC_CMP_IMM: _CPU_CMP(state, state.A); break;
@@ -349,6 +380,7 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_STA_ABS: case IC_STA_ABS_X: case IC_STA_ABS_Y:
             case IC_STX_ABS:
             case IC_STY_ABS:
+            case IC_IL_SHY_ABS_X: case IC_IL_SHX_ABS_Y:
             case IC_ROL_ABS: case IC_ROL_ABS_X:
             case IC_ROR_ABS: case IC_ROR_ABS_X:
             case IC_ASL_ABS: case IC_ASL_ABS_X:
@@ -605,6 +637,7 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_RLA_ABS_X:
             case IC_IL_SRE_ABS_X:
             case IC_IL_RRA_ABS_X:
+            case IC_IL_SHY_ABS_X:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address = (state.data << 8) | ((state.temp + state.X) & 0xFF);
                 state.temp = ((uint16_t)state.temp + (uint16_t)state.X) >> 8;
@@ -625,6 +658,7 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_RLA_ABS_Y:
             case IC_IL_SRE_ABS_Y:
             case IC_IL_RRA_ABS_Y:
+            case IC_IL_SHX_ABS_Y:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address = (state.data << 8) | ((state.temp + state.Y) & 0xFF);
                 state.temp = ((uint16_t)state.temp + (uint16_t)state.Y) >> 8;
@@ -817,6 +851,10 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_ORA_ABS: case IC_ORA_ZP_X: _CPU_SET_REG_A(state, state.A | state.data); break;
             case IC_EOR_ABS: case IC_EOR_ZP_X: _CPU_SET_REG_A(state, state.A ^ state.data); break;
 
+            case IC_IL_NOP_ABS_X0: case IC_IL_NOP_ABS_X1: case IC_IL_NOP_ABS_X2: case IC_IL_NOP_ABS_X3: case IC_IL_NOP_ABS_X4: case IC_IL_NOP_ABS_X5:
+                _CPU_CHECK_PAGE_CROSS(state);
+                break;
+
             case IC_LDA_ABS_X: case IC_LDA_ABS_Y:
                 _CPU_CHECK_PAGE_CROSS(state);
                 _CPU_SET_REG_A(state, state.data);
@@ -894,7 +932,20 @@ static cpu_state cpu_execute(cpu_state state)
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address += state.temp * 0x0100;
                 return state;
-
+            case IC_IL_SHY_ABS_X:
+            {
+                state.rw_mode = CPU_RW_MODE_WRITE;
+                state.data = state.Y & ((uint8_t)(state.address >> 8) + 1);
+                if (state.temp)
+                    state.address = (state.address & ((uint16_t)state.Y << 8)) + 0x0100;
+                return state;
+            }
+            case IC_IL_SHX_ABS_Y:
+                state.rw_mode = CPU_RW_MODE_WRITE;
+                state.data = state.X & ((uint8_t)(state.address >> 8) + 1);
+                if (state.temp)
+                    state.address = (state.address & ((uint16_t)state.X << 8)) + 0x0100;
+                return state;
             case IC_ROL_ABS: 
             case IC_ROR_ABS: 
             case IC_DEC_ABS: 
