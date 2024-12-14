@@ -179,6 +179,9 @@ typedef struct nes_ppu
     } secondary_oam;
 
     uint8_t         palettes[32];
+
+    uint8_t         open_bus;
+    uint8_t         open_bus_decay_timer[8];
 } nes_ppu;
 
 #define _NES_PPU_IS_RENDERING(ppu) ((ppu->scanline < RENDER_END_SCANLINE || ppu->scanline == PRE_RENDER_SCANLINE) &&\
@@ -224,6 +227,13 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
         ppu->status.sprite_0_hit = 0;
         ppu->status.sprite_overflow = 0;
         ppu->is_even_frame = !ppu->is_even_frame;
+
+        // open bus decay
+        uint8_t open_bus_mask = 0;
+        for (uint32_t i = 0; i < 8; ++i)
+            open_bus_mask |= (ppu->open_bus_decay_timer[i]++ < 36) << i;    // 36 * 16.6ms = ~600ms
+
+        ppu->open_bus &= open_bus_mask;
     }
 
     // I/O:
@@ -243,6 +253,13 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
 
     if (ppu->reg_rw_mode)
     {
+        uint8_t open_bus_refresh_bits = 0;
+
+        if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_READ)
+            ppu->reg_data = ppu->open_bus;
+        else
+            open_bus_refresh_bits = 0xFF;
+
         switch(ppu->reg_addr)
         {
             case NES_PPU_CTRL_REG_ID:   // write-only 
@@ -264,23 +281,33 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             {
                 if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_READ)
                 {
-                    ppu->reg_data = ppu->status.b;
+                    ppu->reg_data = (ppu->status.b & 0xE0) | (ppu->open_bus & 0x1F);
                     ppu->status.vblank_started = 0;
                     ppu->write_toggle = 0;
                     ppu->pre_vblank = 0;
+                    open_bus_refresh_bits = 0xE0;
                 }
             }
             break;
-            case NES_PPU_OAM_ADDR_REG_ID:
+            case NES_PPU_OAM_ADDR_REG_ID: // write-only
             {
-                if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_WRITE)  ppu->oam_address = ppu->reg_data;
-                else ppu->reg_data = ppu->oam_address;
+                if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_WRITE)
+                    ppu->oam_address = ppu->reg_data;
             }
             break;
-            case NES_PPU_OAM_DATA_REG_ID:
+            case NES_PPU_OAM_DATA_REG_ID: // read-write
             {
-                if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_WRITE)  ppu->primary_oam.bytes[ppu->oam_address++] = ppu->reg_data;
-                else ppu->reg_data = ppu->primary_oam.bytes[ppu->oam_address];
+                if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_WRITE)
+                {
+                    // sprite attribute bits 2-4 are always 0
+                    ppu->primary_oam.bytes[ppu->oam_address] = (ppu->oam_address & 3) == 2 ? ppu->reg_data & 0xE3 : ppu->reg_data;
+                    ++ppu->oam_address;
+                }
+                else
+                {
+                    ppu->reg_data = ppu->primary_oam.bytes[ppu->oam_address];
+                    open_bus_refresh_bits = 0xFF;
+                }
             }
             break;
             case NES_PPU_SCROLL_REG_ID: // write-only
@@ -337,8 +364,9 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                     else
                     {
                         ppu->r = 1;
-                        ppu->reg_data = ppu->palettes[palette_index];
+                        ppu->reg_data = (ppu->palettes[palette_index] & 0x3F) | (ppu->open_bus & 0xC0);
                         ppu->update_cpu_read_buffer = 1;
+                        open_bus_refresh_bits = 0x3F;
                     }
                 }
                 else
@@ -353,6 +381,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                         ppu->r = 1;
                         ppu->reg_data = ppu->cpu_read_buffer;
                         ppu->update_cpu_read_buffer = 1;
+                        open_bus_refresh_bits = 0xFF;
                     }
                 }
 
@@ -393,6 +422,18 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                 }
             }
             break;
+        }
+
+        if (open_bus_refresh_bits)
+        {
+            ppu->open_bus = ppu->reg_data;
+
+            for (uint32_t i = 0; i < 8; ++i)
+            {
+                uint8_t bit_mask = 1 << i;
+                if (open_bus_refresh_bits & bit_mask)
+                    ppu->open_bus_decay_timer[i] = 0;
+            }
         }
 
         ppu->reg_rw_mode = NES_PPU_REG_RW_MODE_NONE;
