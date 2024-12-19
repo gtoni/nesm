@@ -211,7 +211,7 @@ static cpu_state cpu_reset()
     cpu_state state;
     memset(&state, 0, sizeof(cpu_state));
     _CPU_SET_REG_P(state, CPU_STATUS_FLAG_IRQDISABLE);
-    state.S = 0xFF;
+    state.S = 0;
     state.temp = 0xFC;
     state.cycle = 0;
     state.data = 0;
@@ -829,7 +829,7 @@ static cpu_state cpu_execute(cpu_state state)
                     state.nmi_phase0 = 0;
                     state.temp = 0xFA;
                 }
-                else if (state.nmi_phase0 || state.temp == 0)
+                else if (state.irq_phase0 || state.temp == 0)
                 {
                     state.temp = 0xFE;
                 }

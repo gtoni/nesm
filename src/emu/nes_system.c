@@ -672,6 +672,8 @@ void nes_system_tick(nes_system* system)
     if (!had_vbl && state->ppu.vbl)
         state->cpu.nmi = 1;
 
+    system->cartridge->mapper->tick(system->cartridge, &state->cpu);
+
     if (state->dmc_dma)
     {
         dmc_dma_execute(system);
@@ -684,7 +686,7 @@ void nes_system_tick(nes_system* system)
     {
         cpu_tick(system);
     }
-    
+   
     state->cpu_odd_cycle ^= 1; 
 }
 
