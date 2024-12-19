@@ -162,9 +162,9 @@ enum cpu_status_flags
 
 #define _CPU_RLA(cpu) {\
     cpu.rw_mode = CPU_RW_MODE_WRITE;\
-    uint8_t tmp = cpu.P & 1;\
+    uint8_t carry = cpu.P & 1;\
     _CPU_SET_REG_P(cpu, (cpu.P & 0xFE) | (cpu.data >> 7));\
-    cpu.data = (cpu.data << 1) | tmp;\
+    cpu.data = (cpu.data << 1) | carry;\
     _CPU_SET_REG_A(cpu, cpu.A & cpu.data);\
 }
 
@@ -177,9 +177,9 @@ enum cpu_status_flags
 
 #define _CPU_RRA(cpu) {\
     cpu.rw_mode = CPU_RW_MODE_WRITE;\
-    uint8_t tmp = cpu.P & 1;\
+    uint8_t carry = cpu.P & 1;\
     _CPU_SET_REG_P(cpu, (cpu.P & 0xFE) | (cpu.data & 1));\
-    cpu.data = (cpu.data >> 1) | (tmp << 7);\
+    cpu.data = (cpu.data >> 1) | (carry << 7);\
     _CPU_ADC(cpu);\
 }
 

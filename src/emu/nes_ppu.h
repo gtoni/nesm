@@ -493,6 +493,9 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             }
 
             ppu->color_out = ppu->palettes[palette_index];
+
+            if (ppu->render_mask & NES_PPU_RENDER_MASK_GRAYSCALE)
+                ppu->color_out &= 0x30;
         }
         else
         {
