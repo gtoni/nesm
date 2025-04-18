@@ -56,7 +56,8 @@ typedef enum nes_ppu_render_mask
     NES_PPU_RENDER_MASK_EMPHASIZE_GREEN     = 0x40,
     NES_PPU_RENDER_MASK_EMPHASIZE_BLUE      = 0x80,
 
-    NES_PPU_RENDER_MASK_RENDER  = NES_PPU_RENDER_MASK_BACKGROUND | NES_PPU_RENDER_MASK_SPRITES
+    NES_PPU_RENDER_MASK_RENDER           = NES_PPU_RENDER_MASK_BACKGROUND | NES_PPU_RENDER_MASK_SPRITES,
+    NES_PPU_RENDER_MASK_RENDER_LEFTMOST  = NES_PPU_RENDER_MASK_LEFTMOST_BACKGROUND | NES_PPU_RENDER_MASK_LEFTMOST_SPRITES
 } nes_ppu_render_mask;
 
 typedef union nes_ppu_status_reg
@@ -490,11 +491,17 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                         unsigned pattern = (((ppu->sprite_shift_high[i] >> sprite_shift) << 1) & 2) |
                                            ((ppu->sprite_shift_low[i] >> sprite_shift) & 1);
 
-                        
                         if (pattern)
                         {
-                            if (i == 0 && ppu->sprite_0_test)
-                                ppu->status.sprite_0_hit = ppu->primary_oam.entries[0].position_y < 240;
+                            if (i == 0 && ppu->sprite_0_test && ppu->status.sprite_0_hit == 0)
+                            {
+                                int leftmost_enabled = (ppu->render_mask & NES_PPU_RENDER_MASK_RENDER_LEFTMOST) == NES_PPU_RENDER_MASK_RENDER_LEFTMOST;
+                                int bg_enabled       = (ppu->render_mask & NES_PPU_RENDER_MASK_BACKGROUND);
+
+                                ppu->status.sprite_0_hit = ppu->primary_oam.entries[0].position_y < 240 &&
+                                                           x != 255 && (leftmost_enabled || x > 7) &&
+                                                           bg_enabled && bg_pattern;
+                            }
 
                             if (bg_pattern == 0 || (ppu->sprite_attributes[i].priority == 0))
                                 palette_index = pattern | (ppu->sprite_attributes[i].palette << 2) | 0x10;
@@ -522,7 +529,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             ppu->bg_shift_low <<= 1;
             ppu->attr_shift_high <<= 1;
             ppu->attr_shift_low <<= 1;
-       }
+        }
 
         if (ppu->dot && (ppu->dot <= 256 || (ppu->dot > 320 && ppu->dot <= 336)))
         {
