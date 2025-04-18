@@ -212,13 +212,14 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
         ppu->dot = 0;
     }
 
+    // VBlank
+
     ppu->vbl = ppu->status.vblank_started && ppu->ctrl.generate_nmi;
 
     if (ppu->scanline == VBLANK_BEGIN_SCANLINE)
     {
         if (ppu->dot == 0)      ppu->pre_vblank = 1;
         else if (ppu->dot == 1) ppu->status.vblank_started = ppu->pre_vblank;
-        else if (ppu->dot > 2)  ppu->vbl = ppu->status.vblank_started && ppu->ctrl.generate_nmi;
     }
     else if (ppu->scanline == PRE_RENDER_SCANLINE && ppu->dot == 1)
     {
@@ -440,6 +441,18 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
     }
 
     // Rendering
+
+    int is_render_enabled      = (ppu->render_mask & NES_PPU_RENDER_MASK_RENDER) != 0;
+    int is_next_render_enabled = (next_render_mask & NES_PPU_RENDER_MASK_RENDER) != 0;
+
+    if (is_render_enabled == is_next_render_enabled)
+    {
+        ppu->render_mask = ppu->next_render_mask = next_render_mask;
+    }
+    else
+    {
+        ppu->render_mask = (nes_ppu_render_mask)((ppu->render_mask & NES_PPU_RENDER_MASK_RENDER) | (next_render_mask & ~NES_PPU_RENDER_MASK_RENDER));
+    }
 
     if (_NES_PPU_IS_RENDERING(ppu))
     {
