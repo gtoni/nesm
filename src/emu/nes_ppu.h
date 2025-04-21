@@ -462,10 +462,13 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
         // Draw pixel
         if (ppu->dot <= 257)
         {
+            int x = ppu->dot - 2;
+            
             unsigned bg_pattern = 0;
             uint32_t palette_index = 0;
             
-            if (ppu->render_mask & NES_PPU_RENDER_MASK_BACKGROUND)
+            if ((ppu->render_mask & NES_PPU_RENDER_MASK_BACKGROUND) && 
+               ((ppu->render_mask & NES_PPU_RENDER_MASK_LEFTMOST_BACKGROUND) || x > 7))
             {
                 unsigned bg_shift_x = 15 - ppu->fine_x;
                 bg_pattern = ((ppu->bg_shift_low  >> (bg_shift_x))     & 0x01) |
@@ -479,10 +482,9 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                 }
             }
 
-            if ((ppu->render_mask & NES_PPU_RENDER_MASK_SPRITES))
+            if ((ppu->render_mask & NES_PPU_RENDER_MASK_SPRITES) && 
+               ((ppu->render_mask & NES_PPU_RENDER_MASK_LEFTMOST_SPRITES) || x > 7))
             {
-                int x = ppu->dot - 2;
-
                 for (int i = 0; i < 8; ++i)
                 {
                     if (x >= ppu->sprite_x_positions[i] && (x < ppu->sprite_x_positions[i] + 8))
@@ -494,14 +496,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                         if (pattern)
                         {
                             if (i == 0 && ppu->sprite_0_test && ppu->status.sprite_0_hit == 0)
-                            {
-                                int leftmost_enabled = (ppu->render_mask & NES_PPU_RENDER_MASK_RENDER_LEFTMOST) == NES_PPU_RENDER_MASK_RENDER_LEFTMOST;
-                                int bg_enabled       = (ppu->render_mask & NES_PPU_RENDER_MASK_BACKGROUND);
-
-                                ppu->status.sprite_0_hit = ppu->primary_oam.entries[0].position_y < 240 &&
-                                                           x != 255 && (leftmost_enabled || x > 7) &&
-                                                           bg_enabled && bg_pattern;
-                            }
+                                ppu->status.sprite_0_hit = bg_pattern && x != 255 && ppu->primary_oam.entries[0].position_y < 240;
 
                             if (bg_pattern == 0 || (ppu->sprite_attributes[i].priority == 0))
                                 palette_index = pattern | (ppu->sprite_attributes[i].palette << 2) | 0x10;

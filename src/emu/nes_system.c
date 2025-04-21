@@ -7,7 +7,6 @@
 #include "emu6502.h"
 
 // TODO:
-// - PPU leftmost clipping
 // - 2nd controller handling
 // - Move CHR_RAM to cartridge
 
