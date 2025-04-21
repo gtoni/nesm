@@ -147,11 +147,10 @@ typedef struct nes_ppu
     uint8_t                 sprite_shift_low[8];
     uint8_t                 sprite_shift_high[8];
 
-    uint8_t         eval_oam_free_index;
-    uint8_t         eval_oam_m;
-    uint8_t         eval_oam_n;
-    uint8_t         eval_oam_entry[4];
     uint8_t         eval_oam_has_sprite_zero;
+    uint8_t         eval_oam_entry_data;
+    uint8_t         eval_oam_byte_count;
+    uint8_t         eval_oam_src_addr;
 
     uint8_t         sprite_0_test;
     uint8_t         cpu_read_buffer;
@@ -496,7 +495,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                         if (pattern)
                         {
                             if (i == 0 && ppu->sprite_0_test && ppu->status.sprite_0_hit == 0)
-                                ppu->status.sprite_0_hit = bg_pattern && x != 255 && ppu->primary_oam.entries[0].position_y < 240;
+                                ppu->status.sprite_0_hit = bg_pattern && x != 255;
 
                             if (bg_pattern == 0 || (ppu->sprite_attributes[i].priority == 0))
                                 palette_index = pattern | (ppu->sprite_attributes[i].palette << 2) | 0x10;
@@ -611,10 +610,9 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             // Reset OAM counters at dot 1 of each scanline
             if (ppu->dot == 1)
             {
-                ppu->eval_oam_free_index = 0;
-                ppu->eval_oam_m = 0;
-                ppu->eval_oam_n = 0;
                 ppu->eval_oam_has_sprite_zero = 0;
+                ppu->eval_oam_byte_count = 0;
+                ppu->eval_oam_src_addr = 0;
             }
 
             // Sprite evaluation
@@ -625,45 +623,53 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                     // clear secondary oam 
                     ppu->secondary_oam.bytes[(ppu->dot - 1) >> 1] = 0xFF;
                 }
-                else if (ppu->dot & 1)
+                else 
                 {
-                    // read next entry
-                    for (int i = 0; i < 4; ++i)
-                        ppu->eval_oam_entry[ppu->eval_oam_m++ & 3]  = ppu->primary_oam.bytes[ppu->oam_address++];
-                }
-                else
-                {
-                    if (ppu->eval_oam_n >= ppu->eval_oam_free_index)
+                    if (ppu->dot & 1)
                     {
-                        int has_free_slots = ppu->eval_oam_free_index < 8;
-
-                        if (has_free_slots)
-                            ppu->secondary_oam.entries[ppu->eval_oam_free_index].position_y = ppu->eval_oam_entry[0];
-
-                        if (ppu->scanline >= ppu->eval_oam_entry[0] && ppu->scanline < (ppu->eval_oam_entry[0] + sprite_height))
+                        ppu->eval_oam_entry_data = ppu->primary_oam.bytes[ppu->oam_address];
+                    }
+                    else
+                    {
+                        if (ppu->oam_address >= ppu->eval_oam_src_addr)
                         {
-                            if (has_free_slots)
-                            {
-                                if (ppu->oam_address == 4)
-                                    ppu->eval_oam_has_sprite_zero = 1;
+                            ppu->eval_oam_src_addr = ppu->oam_address;
 
-                                // add primary oam to seconday oam if it's in scanline range
-                                memcpy(ppu->secondary_oam.entries + ppu->eval_oam_free_index, ppu->eval_oam_entry, sizeof(nes_ppu_oam_entry));
-                                ppu->eval_oam_free_index++;
+                            int copy_oam = 1;
+
+                            if ((ppu->eval_oam_byte_count & 3) == 0)
+                            {
+                                uint8_t pos = ppu->eval_oam_entry_data;
+                                if (pos < 240 && ppu->scanline >= pos && ppu->scanline < (pos + sprite_height))
+                                {
+                                    if (ppu->dot == 66)
+                                        ppu->eval_oam_has_sprite_zero = 1;
+
+                                    if (ppu->eval_oam_byte_count == 32)
+                                        ppu->status.sprite_overflow = 1;
+                                }
+                                else
+                                {
+                                    copy_oam = 0;
+                                }
+                            }
+
+                            if (copy_oam)
+                            {
+                                if (ppu->eval_oam_byte_count < 32)
+                                    ppu->secondary_oam.bytes[ppu->eval_oam_byte_count++] = ppu->eval_oam_entry_data;
+
+                                ppu->oam_address++;
                             }
                             else
                             {
-                                ppu->status.sprite_overflow = 1;
+                                ppu->oam_address = (ppu->oam_address + 4);
+
+                                if (ppu->eval_oam_byte_count == 32)
+                                    ppu->oam_address = (ppu->oam_address & 0xFC) | ((ppu->oam_address + 1) & 3);
                             }
                         }
-                        else if (!has_free_slots)
-                        {
-                            // emulate hardware bug
-                            ppu->eval_oam_m++;
-                        }
                     }
-
-                    ppu->eval_oam_n = (ppu->eval_oam_n + 1) & 0x3F;
                 }
             }
         }
@@ -677,6 +683,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             if ((ppu->render_mask & NES_PPU_RENDER_MASK_SPRITES) && ppu->dot && ppu->dot <= 320)
             {
                 uint32_t            current_oam_index = (ppu->dot - 257) >> 3;
+                uint32_t            max_oam_index = ppu->eval_oam_byte_count >> 2;
                 nes_ppu_oam_entry   current_oam = ppu->secondary_oam.entries[current_oam_index];
 
                 ppu->oam_address = 0;
@@ -749,7 +756,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                             ppu->sprite_shift_high[current_oam_index] = ppu->vram_data;
 
                         // Set sprite to transparent if it's not detected on scanline.
-                        if (current_oam_index >= ppu->eval_oam_free_index)
+                        if (current_oam_index >= max_oam_index)
                         {
                             ppu->sprite_shift_high[current_oam_index] = 0;
                             ppu->sprite_shift_low[current_oam_index] = 0;
