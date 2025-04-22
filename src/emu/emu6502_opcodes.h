@@ -218,6 +218,9 @@
 #define IC_IL_SAX_ZP_Y       0x97
 #define IC_IL_SAX_IND_X      0x83
 
+#define IC_IL_XAA_IMM        0x8B
+#define IC_IL_LAS_ABS_Y      0xBB
+
 #define IC_IL_SBC_IMM        0xEB
 
 #define IC_IL_DCP_ABS        0xCF
