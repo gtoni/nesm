@@ -159,16 +159,8 @@ static uint16_t get_ppu_nametable_address(nes_system* system, uint16_t address)
         address = 0xF00 | (address & 0xFF);
 
     if (address <= 0xFFF)
-    {
-        switch (system->cartridge->mirroring)
-        {
-            case NES_NAMETABLE_MIRRORING_VERTICAL:      address = address & 0x7FF; break;
-            case NES_NAMETABLE_MIRRORING_HORIZONTAL:    address = ((address / 2) & 0x400) + (address & 0x3FF); break;
-            case NES_NAMETABLE_MIRRORING_SINGLE_LOW:    address = address & 0x3FF; break;
-            case NES_NAMETABLE_MIRRORING_SINGLE_HIGH:   address = 0x800 + (address & 0x3FF); break;
-        }
-    }
-
+        return system->cartridge->mapper->get_nametable_address(system->cartridge, address);
+    
     return address;
 }
 

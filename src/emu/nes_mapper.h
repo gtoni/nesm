@@ -9,12 +9,13 @@
 
 typedef struct nes_mapper
 {
-    size_t  state_size;
-    void    (*init)(nes_cartridge*);
-    uint8_t (*read)(nes_cartridge*, uint16_t);
-    void    (*write)(nes_cartridge*, uint16_t, uint8_t);
-    uint8_t (*read_chr)(nes_cartridge*, uint16_t);
-    void    (*tick)(nes_cartridge*, cpu_state*);
+    size_t      state_size;
+    void        (*init)(nes_cartridge*);
+    uint8_t     (*read)(nes_cartridge*, uint16_t);
+    void        (*write)(nes_cartridge*, uint16_t, uint8_t);
+    uint8_t     (*read_chr)(nes_cartridge*, uint16_t);
+    void        (*tick)(nes_cartridge*, cpu_state*);
+    uint16_t    (*get_nametable_address)(nes_cartridge*, uint16_t);
 } nes_mapper;
 
 // NROM
@@ -24,7 +25,7 @@ static void NROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
 
 static uint8_t NROM_read(nes_cartridge* cartridge, uint16_t address)
 {
-    if ((cartridge->prg_rom_size/1024) == 32)
+    if (cartridge->prg_rom_size == 0x8000)
         return *(cartridge->prg_rom + (address & 0x7FFF));
     else
         return *(cartridge->prg_rom + (address & 0x3FFF));
@@ -37,10 +38,64 @@ static uint8_t NROM_read_chr(nes_cartridge* cartridge, uint16_t address)
 
 static void NROM_tick(nes_cartridge* cartridge, cpu_state* cpu) {}
 
+static uint16_t NROM_nametable_address(nes_cartridge* cartridge, uint16_t address)
+{
+    switch (cartridge->mirroring)
+    {
+        case NES_NAMETABLE_MIRRORING_VERTICAL:      address = address & 0x7FF; break;
+        case NES_NAMETABLE_MIRRORING_HORIZONTAL:    address = ((address / 2) & 0x400) + (address & 0x3FF); break;
+        case NES_NAMETABLE_MIRRORING_SINGLE_LOW:    address = address & 0x3FF; break;
+        case NES_NAMETABLE_MIRRORING_SINGLE_HIGH:   address = 0x800 + (address & 0x3FF); break;
+    }
+    return address;
+}
+
 static nes_mapper nes_mapper_get_NROM()
 {
-    nes_mapper nrom = {0, &NROM_init, &NROM_read, &NROM_write, &NROM_read_chr, &NROM_tick};
+    nes_mapper nrom = {0, &NROM_init, &NROM_read, &NROM_write, &NROM_read_chr, &NROM_tick, &NROM_nametable_address};
     return nrom;
+}
+
+// AxROM
+
+typedef struct axrom_mapper_state
+{
+    size_t   bank_offset;
+    uint16_t mirroring;
+
+} axrom_mapper_state;
+
+static void AxROM_init(nes_cartridge* cartridge)
+{
+    axrom_mapper_state* state = (axrom_mapper_state*)cartridge->mapper_state;
+    size_t num_banks = cartridge->prg_rom_size / 0x8000;
+    state->bank_offset = (num_banks - 1) * 0x8000; 
+    state->mirroring = 0;
+}
+
+static uint8_t AxROM_read(nes_cartridge* cartridge, uint16_t address)
+{
+    axrom_mapper_state* state = (axrom_mapper_state*)cartridge->mapper_state;
+    return cartridge->prg_rom[(state->bank_offset + (address - 0x8000)) % cartridge->prg_rom_size];
+}
+
+static void AxROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
+{
+    axrom_mapper_state* state = (axrom_mapper_state*)cartridge->mapper_state;
+    state->bank_offset = (data & 7) * 0x8000;
+    state->mirroring = ((uint16_t)data & 0x10) << 7;
+}
+
+static uint16_t AxROM_nametable_address(nes_cartridge* cartridge, uint16_t address)
+{
+    axrom_mapper_state* state = (axrom_mapper_state*)cartridge->mapper_state;
+    return state->mirroring + (address & 0x3FF);
+}
+
+static nes_mapper nes_mapper_get_AxROM()
+{
+    nes_mapper unrom = {sizeof(axrom_mapper_state), &AxROM_init, &AxROM_read, &AxROM_write, &NROM_read_chr, &NROM_tick, &AxROM_nametable_address};
+    return unrom;
 }
 
 // UxROM
@@ -86,7 +141,7 @@ static void UxROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data
 
 static nes_mapper nes_mapper_get_UxROM()
 {
-    nes_mapper unrom = {sizeof(uxrom_mapper_state), &UxROM_init, &UxROM_read, &UxROM_write, &NROM_read_chr, &NROM_tick};
+    nes_mapper unrom = {sizeof(uxrom_mapper_state), &UxROM_init, &UxROM_read, &UxROM_write, &NROM_read_chr, &NROM_tick, &NROM_nametable_address};
     return unrom;
 }
 
@@ -120,7 +175,7 @@ static uint8_t CNROM_read_chr(nes_cartridge* cartridge, uint16_t address)
 
 static nes_mapper nes_mapper_get_CNROM()
 {
-    nes_mapper unrom = {sizeof(cnrom_mapper_state), &CNROM_init, &NROM_read, &CNROM_write, &CNROM_read_chr, &NROM_tick};
+    nes_mapper unrom = {sizeof(cnrom_mapper_state), &CNROM_init, &NROM_read, &CNROM_write, &CNROM_read_chr, &NROM_tick, &NROM_nametable_address};
     return unrom;
 }
 
@@ -296,7 +351,7 @@ static void MMC1_tick(nes_cartridge* cartridge, cpu_state* cpu)
 
 static nes_mapper nes_mapper_get_MMC1()
 {
-    nes_mapper unrom = {sizeof(mmc1_mapper_state), &MMC1_init, &MMC1_read, &MMC1_write, &MMC1_read_chr, &MMC1_tick};
+    nes_mapper unrom = {sizeof(mmc1_mapper_state), &MMC1_init, &MMC1_read, &MMC1_write, &MMC1_read_chr, &MMC1_tick, &NROM_nametable_address};
     return unrom;
 }
 
@@ -309,6 +364,7 @@ static nes_mapper nes_mapper_get(int mapper_id)
         case 1: return nes_mapper_get_MMC1();
         case 2: return nes_mapper_get_UxROM();
         case 3: return nes_mapper_get_CNROM();
+        case 7: return nes_mapper_get_AxROM();
     }
     return nes_mapper_get_NROM();
 }
