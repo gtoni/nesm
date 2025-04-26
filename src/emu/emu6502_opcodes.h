@@ -277,7 +277,10 @@
 #define IC_IL_ARR_IMM        0x6B
 #define IC_IL_AXS_IMM        0xCB
 
+#define IC_IL_SHA_IND_Y      0x93
 #define IC_IL_SHY_ABS_X      0x9C
 #define IC_IL_SHX_ABS_Y      0x9E
+#define IC_IL_SHA_ABS_Y      0x9F
+#define IC_IL_TAS_ABS_Y      0x9B
 
 #endif

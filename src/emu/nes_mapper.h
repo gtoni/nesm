@@ -204,7 +204,7 @@ static void MMC1_init(nes_cartridge* cartridge)
     state->bank_mode = 3;
     state->chr_bank_mode = 0;
     state->prg_bank_selector    = 0;
-    state->fixed_bank_offset    = (cartridge->prg_rom_size - (16 * 1024)) & 0x3FFFF;
+    state->fixed_bank_offset    = (cartridge->prg_rom_size - 0x4000) & 0x3FFFF;
     state->current_bank_offset  = 0;
     state->chr_bank_low_offset  = 0;
     state->chr_bank_high_offset = 0;
@@ -256,7 +256,7 @@ static void MMC1_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
             state->shift_reg = 0;
             state->shift_count = 0;
             state->bank_mode = 3;
-            state->fixed_bank_offset = (cartridge->prg_rom_size - (16 * 1024)) & 0x3FFFF;
+            state->fixed_bank_offset = (cartridge->prg_rom_size - 0x4000) & 0x3FFFF;
             state->write_enable = 1;
         }
         else if (state->write_enable)
@@ -287,7 +287,7 @@ static void MMC1_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
                                 state->fixed_bank_offset = 0;
                             break;
                             case 3:
-                                state->fixed_bank_offset = (cartridge->prg_rom_size - (16 * 1024)) & 0x3FFFF;
+                                state->fixed_bank_offset = (cartridge->prg_rom_size - 0x4000) & 0x3FFFF;
                             break;
                         }
                     }
@@ -320,7 +320,7 @@ static void MMC1_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
                     {
                         unsigned m = state->bank_mode < 2;
                         unsigned bank = (data & 0x0F) & ~m;
-                        state->current_bank_offset = bank * (16 * 1024);
+                        state->current_bank_offset = (bank * 0x4000) % cartridge->prg_rom_size;
                         state->ram_enable = data & 0x10;
                     }
                     break;

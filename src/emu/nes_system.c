@@ -16,7 +16,6 @@ typedef struct nes_system_state
     nes_ppu     ppu;
     nes_apu     apu;
     int         cpu_odd_cycle;
-    int         cpu_dma_halt;
     int         oam_dma;
     uint8_t     oam_dma_data;
     int         oam_dma_cycle;
@@ -412,40 +411,15 @@ static void cpu_tick(nes_system* system)
 {
     nes_system_state* state = &system->state;
 
-    cpu_state new_cpu = cpu_execute(state->cpu);
+    if (system->config.cpu_callback && (uint8_t)state->cpu.cycle == 0 && !state->cpu.halted)
+        system->config.cpu_callback(state->cpu.address, &state->cpu, system->config.client_data);
 
-    if ((state->dmc_dma || state->oam_dma) && new_cpu.rw_mode != CPU_RW_MODE_WRITE)
+    state->cpu = cpu_execute(state->cpu);
+
+    state->cpu.rdy = !(state->dmc_dma || state->oam_dma);
+
+    if (state->cpu.rdy || !state->cpu.halted || (state->dmc_dma ? dmc_dma_execute(system) : oam_dma_execute(system)))
     {
-        int do_side_effects = !state->cpu_dma_halt; // Apply side effects on halt cycle
-
-        if (state->cpu_dma_halt)
-            do_side_effects = state->dmc_dma ? dmc_dma_execute(system) : oam_dma_execute(system);
-
-        state->cpu_dma_halt = 1;
-
-        if (do_side_effects)
-        {
-            cpu_state old_cpu = state->cpu;
-            state->cpu = new_cpu;
-
-            cpu_mem_rw(system);
-            cpu_ppu_bus(system);
-            cpu_apu_bus(system);
-            cpu_joy_bus(system);
-            cpu_oam_dma_bus(system);
-
-            state->cpu = old_cpu;
-        }
-    }
-    else
-    {
-        state->cpu_dma_halt = 0;
-
-        if (system->config.cpu_callback && (uint8_t)state->cpu.cycle == 0)
-            system->config.cpu_callback(state->cpu.address, &state->cpu, system->config.client_data);
-
-        state->cpu = new_cpu;
-
         cpu_mem_rw(system);
         cpu_ppu_bus(system);
         cpu_apu_bus(system);
@@ -541,7 +515,7 @@ void nes_system_reset(nes_system* system)
     nes_apu_reset(&state->apu);
     state->cpu = cpu_reset();
     state->cpu_odd_cycle = 1;
-    state->cpu_dma_halt = 0;
+    state->dmc_dma = 0;
     state->oam_dma = 0;
     state->oam_dma_data = 0;
     state->oam_dma_cycle = 0;

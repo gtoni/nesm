@@ -22,6 +22,8 @@ typedef struct cpu_state_
 
     uint16_t address;         
     uint8_t  rw_mode;
+    uint8_t  rdy         : 1;
+    uint8_t  halted      : 1;
     uint8_t  irq         : 1;
     uint8_t  nmi         : 1;
     uint8_t  irq_phase0  : 1;
@@ -215,11 +217,19 @@ enum cpu_status_flags
     cpu.X = cpu.S = cpu.A;\
 }
 
+#define _CPU_SHAXY(cpu, value, halted) {\
+    state.rw_mode = CPU_RW_MODE_WRITE; \
+    state.data = halted ? value : value & ((uint8_t)(state.address >> 8) + 1);\
+    if (state.temp)\
+        state.address = (state.address & 0xFF) | ((uint16_t)state.data << 8);\
+}
+
 static cpu_state cpu_reset()
 {
     cpu_state state;
     memset(&state, 0, sizeof(cpu_state));
     _CPU_SET_REG_P(state, CPU_STATUS_FLAG_IRQDISABLE);
+    state.rdy = 1;
     state.S = 0;
     state.temp = 0xFC;
     state.cycle = 0;
@@ -229,8 +239,14 @@ static cpu_state cpu_reset()
 
 static cpu_state cpu_execute(cpu_state state)
 {
-    uint8_t cycle = (uint8_t)state.cycle++;
-    uint_fast32_t instruction = _CPU_GET_INSTRUCTION(state);
+    if (!state.rdy && state.rw_mode != CPU_RW_MODE_WRITE)
+    {
+        state.halted = 1;
+        return state;
+    }
+
+    int was_halted = state.halted;
+    state.halted = 0;
 
     int irq_phase1 = state.irq_phase0;
     state.irq_phase0 = state.irq && !(state.P & CPU_STATUS_FLAG_IRQDISABLE);
@@ -238,6 +254,9 @@ static cpu_state cpu_execute(cpu_state state)
     int nmi_phase1 = state.nmi_phase0;
     if (state.nmi_phase0 == 0 && state.nmi)
         state.nmi_phase0 = 1;
+
+    uint8_t cycle = (uint8_t)state.cycle++;
+    uint_fast32_t instruction = _CPU_GET_INSTRUCTION(state);
 
     if (cycle == 0)
     {
@@ -324,7 +343,7 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_SAX_ABS: case IC_IL_SAX_ZP: case IC_IL_SAX_ZP_Y: case IC_IL_SAX_IND_X:
             case IC_IL_XAA_IMM:
             case IC_IL_LAS_ABS_Y:
-            case IC_IL_SHY_ABS_X: case IC_IL_SHX_ABS_Y:
+            case IC_IL_SHY_ABS_X: case IC_IL_SHX_ABS_Y: case IC_IL_SHA_ABS_Y: case IC_IL_SHA_IND_Y: case IC_IL_TAS_ABS_Y:
             case IC_IL_SBC_IMM:
             case IC_IL_NOP_ZP0: case IC_IL_NOP_ZP1: case IC_IL_NOP_ZP2:
             case IC_IL_NOP_ABS:
@@ -392,7 +411,7 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_STX_ABS:
             case IC_STY_ABS:
             case IC_IL_LAS_ABS_Y:
-            case IC_IL_SHY_ABS_X: case IC_IL_SHX_ABS_Y:
+            case IC_IL_SHY_ABS_X: case IC_IL_SHX_ABS_Y: case IC_IL_SHA_ABS_Y: case IC_IL_TAS_ABS_Y:
             case IC_ROL_ABS: case IC_ROL_ABS_X:
             case IC_ROR_ABS: case IC_ROR_ABS_X:
             case IC_ASL_ABS: case IC_ASL_ABS_X:
@@ -558,6 +577,7 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_RLA_IND_Y:
             case IC_IL_SRE_IND_Y:
             case IC_IL_RRA_IND_Y:
+            case IC_IL_SHA_IND_Y:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address = state.data;
                 return state;
@@ -672,6 +692,8 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_RRA_ABS_Y:
             case IC_IL_LAS_ABS_Y:
             case IC_IL_SHX_ABS_Y:
+            case IC_IL_SHA_ABS_Y:
+            case IC_IL_TAS_ABS_Y:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address = (state.data << 8) | ((state.temp + state.Y) & 0xFF);
                 state.temp = ((uint16_t)state.temp + (uint16_t)state.Y) >> 8;
@@ -727,6 +749,7 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_SRE_IND_Y:
             case IC_IL_RRA_IND_X:
             case IC_IL_RRA_IND_Y:
+            case IC_IL_SHA_IND_Y:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address = (state.address + 1) & 0xFF;
                 state.temp = state.data;
@@ -951,18 +974,17 @@ static cpu_state cpu_execute(cpu_state state)
                 state.address += state.temp * 0x0100;
                 return state;
             case IC_IL_SHY_ABS_X:
-            {
-                state.rw_mode = CPU_RW_MODE_WRITE;
-                state.data = state.Y & ((uint8_t)(state.address >> 8) + 1);
-                if (state.temp)
-                    state.address = (state.address & ((uint16_t)state.Y << 8)) + 0x0100;
+                _CPU_SHAXY(state, state.Y, was_halted);
                 return state;
-            }
             case IC_IL_SHX_ABS_Y:
-                state.rw_mode = CPU_RW_MODE_WRITE;
-                state.data = state.X & ((uint8_t)(state.address >> 8) + 1);
-                if (state.temp)
-                    state.address = (state.address & ((uint16_t)state.X << 8)) + 0x0100;
+                _CPU_SHAXY(state, state.X, was_halted);
+                return state;
+            case IC_IL_SHA_ABS_Y:
+                _CPU_SHAXY(state, (state.A & state.X), was_halted);
+                return state;
+            case IC_IL_TAS_ABS_Y:
+                state.S = state.A & state.X;
+                _CPU_SHAXY(state, state.S, was_halted);
                 return state;
             case IC_ROL_ABS: 
             case IC_ROR_ABS: 
@@ -1066,6 +1088,7 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_RLA_IND_Y:
             case IC_IL_SRE_IND_Y:
             case IC_IL_RRA_IND_Y:
+            case IC_IL_SHA_IND_Y:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address = (state.data << 8) | ((state.temp + state.Y) & 0xFF);
                 state.temp = ((uint16_t)state.temp + (uint16_t)state.Y) >> 8;
@@ -1225,6 +1248,10 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_RRA_IND_Y:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address += state.temp * 0x0100;
+                return state;
+
+            case IC_IL_SHA_IND_Y:
+                _CPU_SHAXY(state, (state.A & state.X), was_halted);
                 return state;
 
             case IC_ROL_ABS:
