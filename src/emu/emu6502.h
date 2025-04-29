@@ -265,31 +265,6 @@ static cpu_state cpu_execute(cpu_state state)
 
         switch (state.data)
         {
-            case IC_BRK:
-                if (!state.temp)
-                {
-                    state.rw_mode = CPU_RW_MODE_READ;
-                    state.address = state.PC++;
-                }
-                return state;
-            case IC_PHP:
-                state.rw_mode = CPU_RW_MODE_WRITE;
-                state.address = ((uint8_t)state.S--) + 0x0100;
-                state.data = state.P | CPU_STATUS_FLAG_BREAK;
-                return state;
-            case IC_PHA:
-                state.rw_mode = CPU_RW_MODE_WRITE;
-                state.address = ((uint8_t)state.S--) + 0x0100;
-                state.data = state.A;
-                return state;
-            case IC_RTS: case IC_RTI:
-                state.rw_mode = CPU_RW_MODE_READ;
-                state.address = ((uint8_t)++state.S) + 0x0100;
-                return state;
-            case IC_PLP: case IC_PLA:
-                state.rw_mode = CPU_RW_MODE_READ; // Dummy read
-                state.address = state.PC;
-                return state;
             case IC_INX: _CPU_SET_REG_X(state, state.X + 1); return state;
             case IC_INY: _CPU_SET_REG_Y(state, state.Y + 1); return state;
             case IC_DEX: _CPU_SET_REG_X(state, state.X - 1); return state;
@@ -315,6 +290,30 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_NOP_IMM0: case IC_IL_NOP_IMM1: case IC_IL_NOP_IMM2: case IC_IL_NOP_IMM3: case IC_IL_NOP_IMM4: case IC_IL_NOP_IMM5:
                 return state;
 
+            case IC_PHP:
+                state.rw_mode = CPU_RW_MODE_WRITE;
+                state.address = ((uint8_t)state.S--) + 0x0100;
+                state.data = state.P | CPU_STATUS_FLAG_BREAK;
+                return state;
+            case IC_PHA:
+                state.rw_mode = CPU_RW_MODE_WRITE;
+                state.address = ((uint8_t)state.S--) + 0x0100;
+                state.data = state.A;
+                return state;
+            case IC_PLP: case IC_PLA:
+                state.rw_mode = CPU_RW_MODE_READ; // Dummy read
+                state.address = state.PC;
+                return state;
+
+            case IC_BRK:
+                if (state.temp) // Don't increment PC on hardware interrupt
+                {
+                    state.rw_mode = CPU_RW_MODE_READ;
+                    state.address = state.PC;
+                    return state;
+                }
+
+            case IC_RTS: case IC_RTI:
             case IC_BCC: case IC_BCS: case IC_BNE: case IC_BEQ: case IC_BVC: case IC_BVS: case IC_BPL: case IC_BMI:
             case IC_JMP: case IC_JMP_IND:
             case IC_BIT_ABS: case IC_BIT_ZP: 
@@ -585,19 +584,12 @@ static cpu_state cpu_execute(cpu_state state)
                 state.rw_mode = CPU_RW_MODE_NONE;
                 state.temp = state.data;
                 return state;
-            case IC_RTI:
-                state.rw_mode = CPU_RW_MODE_READ;
-                _CPU_SET_REG_P(state, state.data & ~CPU_STATUS_FLAG_BREAK);
-                state.address = ((uint8_t)++state.S) + 0x0100;
-                return state;
-            case IC_PLA:
-            case IC_PLP:
+            case IC_RTS: case IC_RTI: case IC_PLA: case IC_PLP:
                 state.rw_mode = CPU_RW_MODE_READ;
                 state.address = ((uint8_t)++state.S) + 0x0100;
                 return state;
             case IC_PHA:
             case IC_PHP:
-            case IC_RTS:
                 state.rw_mode = CPU_RW_MODE_NONE;
                 // empty cycle
                 return state;
@@ -792,11 +784,13 @@ static cpu_state cpu_execute(cpu_state state)
                 state.data = (state.PC >> 8);
                 state.address = ((uint8_t)state.S--) + 0x0100;
                 return state;
-            case IC_RTS:
             case IC_RTI:
                 state.rw_mode = CPU_RW_MODE_READ;
+                _CPU_SET_REG_P(state, state.data & ~CPU_STATUS_FLAG_BREAK);
                 state.address = ((uint8_t)++state.S) + 0x0100;
-                state.temp = state.data;
+                return state;
+            case IC_RTS:
+                state.rw_mode = CPU_RW_MODE_NONE;
                 return state;
             case IC_PLA:
                 state.rw_mode = CPU_RW_MODE_NONE;
@@ -1119,13 +1113,12 @@ static cpu_state cpu_execute(cpu_state state)
                 state.address = ((uint8_t)state.S--) + 0x0100;
                 return state;
             case IC_RTS:
-                state.rw_mode = CPU_RW_MODE_NONE;
-                state.PC = ((state.data << 8) | state.temp) + 1;
-                return state;
             case IC_RTI:
-                state.rw_mode = CPU_RW_MODE_NONE;
-                state.PC = (state.data << 8) | state.temp;
+                state.rw_mode = CPU_RW_MODE_READ;
+                state.address = ((uint8_t)++state.S) + 0x0100;
+                state.temp = state.data;
                 return state;
+
            default: break;
         }
     }
@@ -1322,11 +1315,18 @@ static cpu_state cpu_execute(cpu_state state)
             case IC_IL_RLA_ZP_X:
             case IC_IL_SRE_ZP_X:
             case IC_IL_RRA_ZP_X:
-            case IC_RTS:
-            case IC_RTI:
                 state.rw_mode = CPU_RW_MODE_NONE;
                 // empty cycles
                 return state;
+            case IC_RTS:
+                state.rw_mode = CPU_RW_MODE_NONE;
+                state.PC = ((state.data << 8) | state.temp) + 1;
+                return state;
+            case IC_RTI:
+                state.rw_mode = CPU_RW_MODE_NONE;
+                state.PC = (state.data << 8) | state.temp;
+                return state;
+
             default: break;
         }
     }
