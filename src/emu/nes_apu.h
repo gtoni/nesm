@@ -169,6 +169,9 @@ static void update_sweep_target_period(nes_apu* apu, int i)
 {
     const uint16_t change_amount = apu->pulse[i].timer >> apu->pulse[i].sweep_shift_count;
     apu->pulse[i].sweep_target_period = apu->pulse[i].timer + (change_amount ^ (0xFFFF * apu->pulse[i].sweep_negate)) + apu->pulse[i].sweep_negate * (1 + i);
+
+    if (apu->pulse[i].sweep_target_period & 0x8000)
+        apu->pulse[i].sweep_target_period = 0;
 }
 
 static void nes_apu_execute(nes_apu* apu)
@@ -296,7 +299,8 @@ static void nes_apu_execute(nes_apu* apu)
                 {
                     apu->pulse[i].length_counter -= apu->pulse[i].length_counter_halt ^ 1;
 
-                    if (apu->pulse[i].sweep_divider == 0 && apu->pulse[i].sweep_enable && apu->pulse[i].sweep_target_period < 0x800)
+                    if (apu->pulse[i].sweep_divider == 0 && apu->pulse[i].sweep_enable && 
+                        apu->pulse[i].sweep_shift_count && apu->pulse[i].sweep_target_period < 0x800)
                     {
                         apu->pulse[i].timer = apu->pulse[i].sweep_target_period;
                         update_sweep_target_period(apu, i);
