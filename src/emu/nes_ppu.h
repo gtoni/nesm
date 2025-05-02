@@ -187,8 +187,6 @@ typedef struct nes_ppu
 #define _NES_PPU_IS_RENDERING(ppu) ((ppu->scanline < RENDER_END_SCANLINE || ppu->scanline == PRE_RENDER_SCANLINE) &&\
                                     (ppu->render_mask & NES_PPU_RENDER_MASK_RENDER))
 
-#define _NES_PPU_COLOR_BLACK 15
-
 static void nes_ppu_reset(nes_ppu* ppu)
 {
     uint8_t default_palette[] = {
@@ -198,11 +196,12 @@ static void nes_ppu_reset(nes_ppu* ppu)
     memset(ppu, 0, sizeof(nes_ppu));
     memcpy(ppu->palettes, default_palette, sizeof(default_palette));
     ppu->scanline = VBLANK_BEGIN_SCANLINE;
-    ppu->color_out = _NES_PPU_COLOR_BLACK;
+    ppu->color_out = 0x0F;
 }
 
 static void nes_ppu_execute(nes_ppu* __restrict ppu)
 {
+    uint8_t palette_index = 0;
     nes_ppu_render_mask next_render_mask = ppu->next_render_mask;
 
     // Update dot and scanline
@@ -250,6 +249,13 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             ppu->update_cpu_read_buffer = 0;
         }
         ppu->r = ppu->w = 0;
+    }
+
+    if (ppu->vram_address >= 0x3F00 && ppu->vram_address <= 0x3FFF)
+    {
+        palette_index = ppu->vram_address & 0x1F;
+        if ((palette_index & 0x13) == 0x10)
+            palette_index &= ~0x10;
     }
 
     if (ppu->reg_rw_mode)
@@ -351,13 +357,9 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             {
                 if (ppu->vram_address >= 0x3F00 && ppu->vram_address <= 0x3FFF)
                 {
-                    uint8_t palette_index = ppu->vram_address & 0x1F;
-                    if ((palette_index & 0x13) == 0x10)
-                        palette_index &= ~0x10;
-
                     if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_WRITE)
                     {
-                        ppu->palettes[palette_index] = ppu->reg_data;
+                        ppu->palettes[palette_index] = ppu->reg_data & 0x3F;
 
                         if (!_NES_PPU_IS_RENDERING(ppu))
                             ppu->vram_address += ppu->ctrl.vram_rw_increment_step ? 32 : 1;
@@ -458,13 +460,13 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
     {
         const unsigned sprite_height = 8 << ppu->ctrl.sprite_size;
 
+        palette_index = 0;
+
         // Draw pixel
         if (ppu->dot <= 257)
         {
             int x = ppu->dot - 2;
-            
             unsigned bg_pattern = 0;
-            uint32_t palette_index = 0;
             
             if ((ppu->render_mask & NES_PPU_RENDER_MASK_BACKGROUND) && 
                ((ppu->render_mask & NES_PPU_RENDER_MASK_LEFTMOST_BACKGROUND) || x > 7))
@@ -505,15 +507,6 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                     }
                 }
             }
-
-            ppu->color_out = ppu->palettes[palette_index];
-
-            if (ppu->render_mask & NES_PPU_RENDER_MASK_GRAYSCALE)
-                ppu->color_out &= 0x30;
-        }
-        else
-        {
-            ppu->color_out = _NES_PPU_COLOR_BLACK;
         }
 
         // Shift background shift registers
@@ -780,6 +773,11 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             }
         }
     }
+
+    ppu->color_out = ppu->palettes[palette_index];
+
+    if (ppu->render_mask & NES_PPU_RENDER_MASK_GRAYSCALE)
+        ppu->color_out &= 0x30;
 
     ppu->render_mask = ppu->next_render_mask;
     ppu->next_render_mask = next_render_mask;
