@@ -361,7 +361,9 @@ static void cpu_joy_bus(nes_system* system)
     {
         if (state->cpu.address == 0x4016)
         {
-            state->cpu.data = (state->controller_input0 >> 7) & 1;
+            uint8_t input = (state->controller_input0 >> 7) & 1;
+
+            state->cpu.data = (state->cpu.data & 0xE0) | (input & 0x1F);
             state->controller_input0 = (state->controller_input0 << 1) | 1;
 
             state->cached_apuio_reg[state->cpu.address & 0x1F] = state->cpu.data;
