@@ -347,7 +347,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                     }
                     else
                     {
-                        ppu->t_addr_reg = ((ppu->reg_data & 0x7F) << 8) | (ppu->vram_address & 0x00FF);
+                        ppu->t_addr_reg = ((ppu->reg_data & 0x3F) << 8) | (ppu->vram_address & 0x00FF);
                     }
                     ppu->write_toggle = !ppu->write_toggle;
                 }

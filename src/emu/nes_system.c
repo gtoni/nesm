@@ -17,8 +17,8 @@ typedef struct nes_system_state
     nes_apu     apu;
     int         cpu_odd_cycle;
     int         oam_dma;
-    uint8_t     oam_dma_data;
     int         oam_dma_cycle;
+    uint16_t    oam_dma_cpu_address;
     uint16_t    oam_dma_src_address;
     uint8_t     oam_dma_dst_address;
     int         dmc_dma;
@@ -60,39 +60,30 @@ static int oam_dma_execute(nes_system* system)
     nes_system_state* state = &system->state;
 
     int cycle = state->oam_dma_cycle;
-    int put_cycle = cycle & 1;
+    int put_cycle = (cycle & 1);
 
+    if (cycle)  state->cpu.address = state->oam_dma_cpu_address;
+    else        state->oam_dma_cpu_address = state->cpu.address;
+    
     if (state->cpu_odd_cycle == put_cycle)
         return 1; // realign cycle
 
     if (put_cycle)
     {
         if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_OAM, NES_MEMORY_OP_WRITE, state->oam_dma_dst_address & 0xFF, &state->oam_dma_data, system->config.client_data);
+            system->config.memory_callback(NES_MEMORY_TYPE_OAM, NES_MEMORY_OP_WRITE, state->oam_dma_dst_address & 0xFF, &state->cpu.data, system->config.client_data);
 
-        state->ppu.primary_oam.bytes[(state->oam_dma_dst_address++)&0xFF] = state->oam_dma_data;
+        state->ppu.primary_oam.bytes[(state->oam_dma_dst_address++) & 0xFF] = state->cpu.data;
     }
     else
     {
-        if (state->oam_dma_src_address >= 0x6000)
-        {
-            state->oam_dma_data = system->cartridge->mapper->read(system->cartridge, state->oam_dma_src_address);
-        }
-        else
-        {
-            state->oam_dma_data = state->ram[state->oam_dma_src_address & 0x7FF];
-        }
-
-        if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_READ_DMA, state->oam_dma_src_address, &state->oam_dma_data, system->config.client_data);
-
-        state->oam_dma_src_address++;
+        state->cpu.address = state->oam_dma_src_address++;
     }
 
     if (++state->oam_dma_cycle == 512)
         state->oam_dma = 0;
 
-    return 0;
+    return !put_cycle;
 }
 
 static void dmc_dma_init(nes_system* system)
@@ -153,14 +144,8 @@ static int dmc_dma_execute(nes_system* system)
 
 static uint16_t get_ppu_nametable_address(nes_system* system, uint16_t address)
 {
-    address = (address & 0x3FFF) - 0x2000;
-    if (address >= 0x1F00 && address <= 0x1FFF)
-        address = 0xF00 | (address & 0xFF);
-
-    if (address <= 0xFFF)
-        return system->cartridge->mapper->get_nametable_address(system->cartridge, address);
-    
-    return address;
+    address = ((address & 0x3FFF) - 0x2000) & 0x0FFF;
+    return system->cartridge->mapper->get_nametable_address(system->cartridge, address);
 }
 
 static void ppu_mem_rw(nes_system* system)
@@ -223,10 +208,11 @@ static void ppu_cpu_bus(nes_system* system)
 
         if (system->config.memory_callback)
         {
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_READ, state->cpu.address, &state->cpu.data, system->config.client_data);
+            nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
+            system->config.memory_callback(NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data, system->config.client_data);
 
             if (reg_addr == NES_PPU_OAM_DATA_REG_ID)
-                system->config.memory_callback(NES_MEMORY_TYPE_OAM, NES_MEMORY_OP_READ, state->ppu.oam_address, &state->ppu.reg_data, system->config.client_data);
+                system->config.memory_callback(NES_MEMORY_TYPE_OAM, read_op, state->ppu.oam_address, &state->ppu.reg_data, system->config.client_data);
         }
     }
 }
@@ -280,7 +266,10 @@ static void cpu_mem_rw(nes_system* system)
             state->cpu.data = system->cartridge->mapper->read(system->cartridge, state->cpu.address);
 
         if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_READ, state->cpu.address, &state->cpu.data, system->config.client_data);
+        {
+            nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
+            system->config.memory_callback(NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data, system->config.client_data);
+        }
     }
     else if (state->cpu.rw_mode == CPU_RW_MODE_WRITE)
     {
@@ -369,7 +358,10 @@ static void cpu_joy_bus(nes_system* system)
             state->cached_apuio_reg[state->cpu.address & 0x1F] = state->cpu.data;
 
             if (system->config.memory_callback)
-                system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_READ, state->cpu.address, &state->cpu.data, system->config.client_data);
+            {
+                nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
+                system->config.memory_callback(NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data, system->config.client_data);
+            }
         }
     }
     else if (state->cpu.rw_mode == CPU_RW_MODE_WRITE && state->cpu.address == 0x4016)
@@ -442,7 +434,10 @@ static void apu_cpu_bus(nes_system* system)
         state->cached_apuio_reg[0x15] = state->cpu.data;
 
         if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_READ, state->cpu.address, &state->cpu.data, system->config.client_data);
+        {
+            nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
+            system->config.memory_callback(NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data, system->config.client_data);
+        }
     }
 }
 
@@ -516,10 +511,9 @@ void nes_system_reset(nes_system* system)
     nes_ppu_reset(&state->ppu);
     nes_apu_reset(&state->apu);
     state->cpu = cpu_reset();
-    state->cpu_odd_cycle = 1;
+    state->cpu_odd_cycle = 0;
     state->dmc_dma = 0;
     state->oam_dma = 0;
-    state->oam_dma_data = 0;
     state->oam_dma_cycle = 0;
     state->oam_dma_src_address = 0;
     state->oam_dma_dst_address = 0;
