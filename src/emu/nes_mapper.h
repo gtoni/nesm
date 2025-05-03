@@ -150,21 +150,42 @@ static nes_mapper nes_mapper_get_UxROM()
 typedef struct cnrom_mapper_state
 {
     size_t  current_bank_offset;
-    uint8_t bank_mask;
+    uint8_t ram[0x800];
 }cnrom_mapper_state;
 
 static void CNROM_init(nes_cartridge* cartridge)
 {
     cnrom_mapper_state* state = (cnrom_mapper_state*)cartridge->mapper_state;
     state->current_bank_offset = 0;
-    state->bank_mask = 0x3;
 }
 
 static void CNROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
 {
-    const size_t bank_size = 8 * 1024;
     cnrom_mapper_state* state = (cnrom_mapper_state*)cartridge->mapper_state;
-    state->current_bank_offset = (data & state->bank_mask) * bank_size;
+    if (address >= 0x6000 && address < 0x8000)
+    {
+        state->ram[address & 0x7FF] = data;
+    }
+    else if (address >= 0x8000)
+    {
+        state->current_bank_offset = (data & 3) * 0x2000;
+    }
+}
+
+static uint8_t CNROM_read(nes_cartridge* cartridge, uint16_t address)
+{
+    cnrom_mapper_state* state = (cnrom_mapper_state*)cartridge->mapper_state;
+    if (address >= 0x6000 && address < 0x8000)
+    {
+        return state->ram[address & 0x7FF];
+    }
+    else
+    {
+        if (cartridge->prg_rom_size == 0x8000)
+            return *(cartridge->prg_rom + (address & 0x7FFF));
+        else
+            return *(cartridge->prg_rom + (address & 0x3FFF));
+    }
 }
 
 static uint8_t CNROM_read_chr(nes_cartridge* cartridge, uint16_t address)
@@ -175,7 +196,7 @@ static uint8_t CNROM_read_chr(nes_cartridge* cartridge, uint16_t address)
 
 static nes_mapper nes_mapper_get_CNROM()
 {
-    nes_mapper unrom = {sizeof(cnrom_mapper_state), &CNROM_init, &NROM_read, &CNROM_write, &CNROM_read_chr, &NROM_tick, &NROM_nametable_address};
+    nes_mapper unrom = {sizeof(cnrom_mapper_state), &CNROM_init, &CNROM_read, &CNROM_write, &CNROM_read_chr, &NROM_tick, &NROM_nametable_address};
     return unrom;
 }
 
