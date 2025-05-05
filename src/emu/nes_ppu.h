@@ -114,7 +114,7 @@ typedef struct nes_ppu
     uint8_t w           : 1;
     uint8_t vbl         : 1;
 
-    uint8_t color_out;
+    uint16_t color_out;
 
     unsigned is_even_frame;
 
@@ -778,6 +778,8 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
 
     if (ppu->render_mask & NES_PPU_RENDER_MASK_GRAYSCALE)
         ppu->color_out &= 0x30;
+
+    ppu->color_out |= (((uint16_t)ppu->render_mask) << 1) & 0x1C0;
 
     ppu->render_mask = ppu->next_render_mask;
     ppu->next_render_mask = next_render_mask;

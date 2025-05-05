@@ -38,7 +38,7 @@ struct nes_system
     nes_system_state    state;
     nes_config          config;
     nes_cartridge*      cartridge;
-    uint8_t             framebuffer[SCANLINE_WIDTH * TOTAL_SCANLINES];
+    uint16_t            framebuffer[SCANLINE_WIDTH * TOTAL_SCANLINES];
 };
 
 /////////////////////////////////////////////////
@@ -65,7 +65,7 @@ static int oam_dma_execute(nes_system* system)
     if (cycle)  state->cpu.address = state->oam_dma_cpu_address;
     else        state->oam_dma_cpu_address = state->cpu.address;
     
-    if (state->cpu_odd_cycle == put_cycle)
+    if (state->cpu_odd_cycle != put_cycle)
         return 1; // realign cycle
 
     if (put_cycle)
@@ -232,7 +232,7 @@ static void ppu_tick(nes_system* system)
         ppu_cpu_bus(system);
     
     system->framebuffer[state->ppu.scanline * SCANLINE_WIDTH + state->ppu.dot] = state->ppu.color_out;
-   
+
     if (system->config.video_callback && state->ppu.scanline == (RENDER_END_SCANLINE + 1) && state->ppu.dot == 0)
     {
         nes_video_output video_output;
@@ -240,9 +240,6 @@ static void ppu_tick(nes_system* system)
         video_output.width  = 256;
         video_output.height = 224;
         video_output.odd_frame = !state->ppu.is_even_frame;
-        video_output.emphasize_red      = state->ppu.render_mask & NES_PPU_RENDER_MASK_EMPHASIZE_RED;
-        video_output.emphasize_green    = state->ppu.render_mask & NES_PPU_RENDER_MASK_EMPHASIZE_GREEN;
-        video_output.emphasize_blue     = state->ppu.render_mask & NES_PPU_RENDER_MASK_EMPHASIZE_BLUE;
 
         system->config.video_callback(&video_output, system->config.client_data);
     }
@@ -511,7 +508,7 @@ void nes_system_reset(nes_system* system)
     nes_ppu_reset(&state->ppu);
     nes_apu_reset(&state->apu);
     state->cpu = cpu_reset();
-    state->cpu_odd_cycle = 0;
+    state->cpu_odd_cycle = 1;
     state->dmc_dma = 0;
     state->oam_dma = 0;
     state->oam_dma_cycle = 0;

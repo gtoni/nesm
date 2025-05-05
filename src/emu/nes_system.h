@@ -29,9 +29,11 @@ typedef union nes_pixel
     {
         uint8_t hue        : 4;
         uint8_t brightness : 2;
-        uint8_t unused     : 2;
+        uint8_t emphasis_r : 1;
+        uint8_t emphasis_g : 1;
+        uint8_t emphasis_b : 1;
     } component;
-    uint8_t value;
+    uint16_t value;
 } nes_pixel;
 
 #define NES_FRAMEBUFFER_ROW_STRIDE 341
@@ -42,9 +44,6 @@ typedef struct nes_video_output
     uint16_t    width;
     uint16_t    height;
     uint8_t     odd_frame       : 1;
-    uint8_t     emphasize_red   : 1;
-    uint8_t     emphasize_green : 1;
-    uint8_t     emphasize_blue  : 1;
 } nes_video_output;
 
 typedef struct nes_audio_output
