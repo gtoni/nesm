@@ -131,17 +131,68 @@ static uint8_t UxROM_read(nes_cartridge* cartridge, uint16_t address)
 
 static void UxROM_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
 {
-    const size_t bank_size = 16 * 1024;
     uxrom_mapper_state* state = (uxrom_mapper_state*)cartridge->mapper_state;
-    if (UxROM_read(cartridge, address) == data)
-    {
-        state->current_bank_offset = (data & state->bank_mask) * bank_size;
-    }
+    if (address >= 0x8000)
+        state->current_bank_offset = (data & state->bank_mask) * 0x4000;
 }
 
 static nes_mapper nes_mapper_get_UxROM()
 {
     nes_mapper unrom = {sizeof(uxrom_mapper_state), &UxROM_init, &UxROM_read, &UxROM_write, &NROM_read_chr, &NROM_tick, &NROM_nametable_address};
+    return unrom;
+}
+
+// Mapper071
+
+typedef struct mapper071_mapper_state
+{
+    uxrom_mapper_state uxrom_state;
+    uint16_t mirroring_mode;
+    uint8_t  mirroring_set;
+} mapper071_mapper_state;
+
+static void Mapper071_init(nes_cartridge* cartridge)
+{
+    UxROM_init(cartridge);
+
+    mapper071_mapper_state* state = (mapper071_mapper_state*)cartridge->mapper_state;
+    state->mirroring_mode = 0;
+    state->mirroring_set = 0;
+}
+
+static void Mapper071_write(nes_cartridge* cartridge, uint16_t address, uint8_t data)
+{
+    mapper071_mapper_state* state = (mapper071_mapper_state*)cartridge->mapper_state;
+    if (address >= 0x8000 && address < 0xC000)
+    {
+        if (address >= 0x9000 && address <= 0x9FFF)
+        {
+            state->mirroring_mode = ((uint16_t)data << 7) & 0x800;
+            state->mirroring_set = 1;
+        }
+    }
+    else
+    {
+        UxROM_write(cartridge, address, data);
+    }
+}
+
+static uint16_t Mapper071_nametable_address(nes_cartridge* cartridge, uint16_t address)
+{
+    mapper071_mapper_state* state = (mapper071_mapper_state*)cartridge->mapper_state;
+    if (state->mirroring_set)
+    {
+        return state->mirroring_mode + (address & 0x3FF);
+    }
+    else
+    {
+        return NROM_nametable_address(cartridge, address);
+    }
+}
+
+static nes_mapper nes_mapper_get_Mapper071()
+{
+    nes_mapper unrom = {sizeof(mapper071_mapper_state), &Mapper071_init, &UxROM_read, &Mapper071_write, &NROM_read_chr, &NROM_tick, &Mapper071_nametable_address};
     return unrom;
 }
 
@@ -382,10 +433,11 @@ static nes_mapper nes_mapper_get(int mapper_id)
 {
     switch(mapper_id)
     {
-        case 1: return nes_mapper_get_MMC1();
-        case 2: return nes_mapper_get_UxROM();
-        case 3: return nes_mapper_get_CNROM();
-        case 7: return nes_mapper_get_AxROM();
+        case 1:     return nes_mapper_get_MMC1();
+        case 2:     return nes_mapper_get_UxROM();
+        case 3:     return nes_mapper_get_CNROM();
+        case 7:     return nes_mapper_get_AxROM();
+        case 71:    return nes_mapper_get_Mapper071();
     }
     return nes_mapper_get_NROM();
 }

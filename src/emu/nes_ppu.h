@@ -456,7 +456,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
         ppu->render_mask = (nes_ppu_render_mask)((ppu->render_mask & NES_PPU_RENDER_MASK_RENDER) | (next_render_mask & ~NES_PPU_RENDER_MASK_RENDER));
     }
 
-    if (_NES_PPU_IS_RENDERING(ppu))
+    if (_NES_PPU_IS_RENDERING(ppu) && ppu->dot)
     {
         const unsigned sprite_height = 8 << ppu->ctrl.sprite_size;
 
@@ -509,17 +509,14 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             }
         }
 
-        // Shift background shift registers
-        if ((ppu->dot >= 2 && ppu->dot <= 257) || (ppu->dot >= 322 && ppu->dot <= 337))
+        if (ppu->dot <= 256 || (ppu->dot > 320 && ppu->dot <= 336))
         {
+            // Shift background shift registers
             ppu->bg_shift_high <<= 1;
             ppu->bg_shift_low <<= 1;
             ppu->attr_shift_high <<= 1;
             ppu->attr_shift_low <<= 1;
-        }
 
-        if (ppu->dot && (ppu->dot <= 256 || (ppu->dot > 320 && ppu->dot <= 336)))
-        {
             // Fetch background data and update shift registers
             switch(ppu->dot & 7)
             {
@@ -673,7 +670,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                 ppu->v_addr_reg = (ppu->v_addr_reg & ~0x041F) | (ppu->t_addr_reg & 0x041F);
 
             // Fetch sprite data
-            if ((ppu->render_mask & NES_PPU_RENDER_MASK_SPRITES) && ppu->dot && ppu->dot <= 320)
+            if ((ppu->render_mask & NES_PPU_RENDER_MASK_SPRITES) && ppu->dot <= 320)
             {
                 uint32_t            current_oam_index = (ppu->dot - 257) >> 3;
                 uint32_t            max_oam_index = ppu->eval_oam_byte_count >> 2;
