@@ -136,6 +136,7 @@ typedef struct nes_ppu
     uint8_t  tile_value;
     uint8_t  palette_attribute;
     uint8_t  bitplane_slice_low;
+    uint8_t  bitplane_slice_high;
 
     uint16_t bg_shift_low;
     uint16_t bg_shift_high;
@@ -522,7 +523,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             {
                 case 1:
                     // Reload shift registers
-                    ppu->bg_shift_high |= ppu->vram_data;
+                    ppu->bg_shift_high |= ppu->bitplane_slice_high;
                     ppu->bg_shift_low |= ppu->bitplane_slice_low;
                     ppu->attr_shift_low |= (ppu->palette_attribute & 1) * 0xFF;
                     ppu->attr_shift_high |= ((ppu->palette_attribute >> 1) & 1) * 0xFF;
@@ -558,6 +559,8 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                     ppu->vram_address = (ppu->ctrl.bgr_pattern_table_addr << 12) | (ppu->tile_value << 4) | 8 | ppu->v_addr.fine_y;
                     break;
                 case 0:
+                    ppu->bitplane_slice_high = ppu->vram_data;
+
                     // Increment horizontal scrolling
                     if (ppu->v_addr.coarse_x == 31)
                     {
@@ -670,7 +673,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                 ppu->v_addr_reg = (ppu->v_addr_reg & ~0x041F) | (ppu->t_addr_reg & 0x041F);
 
             // Fetch sprite data
-            if ((ppu->render_mask & NES_PPU_RENDER_MASK_SPRITES) && ppu->dot <= 320)
+            if (ppu->dot <= 320)
             {
                 uint32_t            current_oam_index = (ppu->dot - 257) >> 3;
                 uint32_t            max_oam_index = ppu->eval_oam_byte_count >> 2;
@@ -682,14 +685,21 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                 switch(ppu->dot & 7)
                 {
                     case 1: 
-                        ppu->sprite_attributes[current_oam_index] = current_oam.attribute;
+                        // Garbage nametable fetch
+                        ppu->r = 1;
+                        ppu->vram_address = 0x2000 | (ppu->v_addr_reg & 0x0FFF);
                         break;
                     case 2:
-                        ppu->sprite_x_positions[current_oam_index] = current_oam.position_x;
                         break;
                     case 3:
+                        // Garbage attribute table fetch
+                        ppu->r = 1;
+                        ppu->vram_address = 0x23C0 | (ppu->v_addr_reg & 0x0C00) | ((ppu->v_addr_reg >> 4) & 0x38) | ((ppu->v_addr_reg >> 2) & 0x07);
+
+                        ppu->sprite_attributes[current_oam_index] = current_oam.attribute;
                         break;
                     case 4:
+                        ppu->sprite_x_positions[current_oam_index] = current_oam.position_x;
                         break;
                     case 5:
                         {
@@ -753,6 +763,12 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                         }
                         break;
                 }
+            }
+            else if (ppu->dot == 337 || ppu->dot == 339)
+            {
+                // Unused nametable fetch
+                ppu->r = 1;
+                ppu->vram_address = 0x2000 | (ppu->v_addr_reg & 0x0FFF);
             }
        
             if (ppu->scanline == PRE_RENDER_SCANLINE)
