@@ -196,7 +196,9 @@ static void nes_ppu_reset(nes_ppu* ppu)
     };
     memset(ppu, 0, sizeof(nes_ppu));
     memcpy(ppu->palettes, default_palette, sizeof(default_palette));
-    ppu->scanline = VBLANK_BEGIN_SCANLINE;
+    ppu->scanline = PRE_RENDER_SCANLINE;
+    ppu->dot = 340;
+    ppu->is_even_frame = 1;
     ppu->color_out = 0x0F;
 }
 
