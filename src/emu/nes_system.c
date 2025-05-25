@@ -91,7 +91,7 @@ static void dmc_dma_init(nes_system* system)
     nes_system_state* state = &system->state;
 
     state->dmc_dma = 1;
-    state->dmc_dma_dummy = 0;
+    state->dmc_dma_dummy = 1 + state->cpu.halted; // If already halted, perform a dummy halt cycle anyway
     state->dmc_dma_src_address = state->apu.dmc.current_address;
 }
 
@@ -99,14 +99,19 @@ static int dmc_dma_execute(nes_system* system)
 {
     nes_system_state* state = &system->state;
 
-    if (state->dmc_dma_dummy == 0)
+    int is_dmc_dma_cycle = 1;
+
+    if (state->dmc_dma_dummy)
     {
-        state->dmc_dma_dummy = 1;
-        return 1;
+        --state->dmc_dma_dummy;
+        is_dmc_dma_cycle = 0;
     }
 
     if (state->cpu_odd_cycle == 1)
-        return 1; // realign cycle
+        is_dmc_dma_cycle = 0; // realign cycle
+
+    if (!is_dmc_dma_cycle)
+        return state->oam_dma ? oam_dma_execute(system) : 1;
 
     if (state->dmc_dma_src_address >= 0x6000)
     {
@@ -448,6 +453,9 @@ static void apu_tick(nes_system* system)
 
     if (state->dmc_dma == 0 && state->apu.dmc.sample_buffer_loaded == 0 && state->apu.dmc.bytes_remaining)
         dmc_dma_init(system);
+
+    if (state->dmc_dma && state->apu.dmc.bytes_remaining == 0)
+        state->dmc_dma = 0;
 
     if (system->config.audio_callback && state->apu.sample_count == NES_APU_MAX_SAMPLES)
     {

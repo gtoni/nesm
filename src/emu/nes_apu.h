@@ -111,6 +111,7 @@ typedef struct nes_apu_dmc
     uint8_t     loop : 1;
     uint8_t     silence : 1;
     uint8_t     sample_buffer_loaded : 1;
+    uint8_t     sample_buffer_load_request : 1;
     uint16_t    timer;
     uint16_t    t;
     uint16_t    sample_address;
@@ -405,6 +406,15 @@ static void nes_apu_execute(nes_apu* apu)
             }
         }
     }
+    else
+    {
+        if (apu->dmc.sample_buffer_load_request)
+        {
+            apu->dmc.current_address = apu->dmc.sample_address;
+            apu->dmc.bytes_remaining = apu->dmc.sample_length;
+            apu->dmc.sample_buffer_load_request = 0;
+        }
+    }
 
     // Update triangle channel
     if (apu->triangle.t-- == 0)
@@ -448,10 +458,8 @@ static void nes_apu_execute(nes_apu* apu)
                 if (apu->channel_enable.dmc)
                 {
                     if (apu->dmc.bytes_remaining == 0)
-                    {
-                        apu->dmc.current_address = apu->dmc.sample_address;
-                        apu->dmc.bytes_remaining = apu->dmc.sample_length;
-                    }
+                        apu->dmc.sample_buffer_load_request = 1;
+
                 }
                 else
                 {
@@ -561,7 +569,7 @@ static void nes_apu_execute(nes_apu* apu)
                 apu->dmc.irq_enabled = apu->reg_data >> 7;
                 apu->dmc.interrupt &= apu->dmc.irq_enabled;
                 apu->dmc.loop = (apu->reg_data >> 6) & 1;
-                apu->dmc.timer = rates[apu->reg_data & 0x0F] >> 1;
+                apu->dmc.timer = (rates[apu->reg_data & 0x0F] >> 1) - 1;
             }
             break;
             case NES_APU_DMC_REG1_ID:
