@@ -208,8 +208,8 @@ nes_controller_state on_nes_input(int controller_id, void* client)
             state.down  = keys[SDL_SCANCODE_S];
             state.left  = keys[SDL_SCANCODE_A];
             state.right = keys[SDL_SCANCODE_D];
-            state.A     = keys[SDL_SCANCODE_J];
-            state.B     = keys[SDL_SCANCODE_K];
+            state.A     = keys[SDL_SCANCODE_K];
+            state.B     = keys[SDL_SCANCODE_J];
             state.select = keys[SDL_SCANCODE_TAB];
             state.start  = keys[SDL_SCANCODE_RETURN];
         }
