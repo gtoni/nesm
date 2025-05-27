@@ -303,11 +303,10 @@ int main(int argc, char** argv)
     config.source_type = NES_SOURCE_FILE;
     config.source.file_path = rom_path;
     config.client_data = 0;
+    config.layer = 0;
     config.input_callback = &on_nes_input;
     config.video_callback = &on_nes_video;
     config.audio_callback = &on_nes_audio;
-    config.memory_callback = 0;
-    config.cpu_callback = 0;
 
     system = nes_system_create(&config);
     if (!system)

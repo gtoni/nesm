@@ -41,6 +41,45 @@ struct nes_system
     uint16_t            framebuffer[SCANLINE_WIDTH * TOTAL_SCANLINES];
 };
 
+static void execute_memory_callbacks(nes_system* system, nes_memory_type memory_type, nes_memory_op op, uint16_t address, uint8_t* data)
+{
+    for (nes_system_layer* layer = system->config.layer; layer; layer = layer->next)
+    {
+        if (layer->memory_callback)
+            layer->memory_callback(memory_type, op, address, data, layer->client_data);
+    }
+}
+
+static void execute_cpu_callbacks(nes_system* system, cpu_state* state)
+{
+    for (nes_system_layer* layer = system->config.layer; layer; layer = layer->next)
+    {
+        if (layer->cpu_cycle_callback)
+            layer->cpu_cycle_callback(state, layer->client_data);
+
+        if (layer->cpu_callback && ((uint8_t)state->cycle) == 0)
+            layer->cpu_callback(state, layer->client_data);
+    }
+}
+
+static void execute_ppu_callbacks(nes_system* system, nes_ppu* ppu)
+{
+    for (nes_system_layer* layer = system->config.layer; layer; layer = layer->next)
+    {
+        if (layer->ppu_callback)
+            layer->ppu_callback(ppu, layer->client_data);
+    }
+}
+
+static void execute_apu_callbacks(nes_system* system, nes_apu* apu)
+{
+    for (nes_system_layer* layer = system->config.layer; layer; layer = layer->next)
+    {
+        if (layer->apu_callback)
+            layer->apu_callback(apu, layer->client_data);
+    }
+}
+
 /////////////////////////////////////////////////
 // Internal
 /////////////////////////////////////////////////
@@ -70,8 +109,7 @@ static int oam_dma_execute(nes_system* system)
 
     if (put_cycle)
     {
-        if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_OAM, NES_MEMORY_OP_WRITE, state->oam_dma_dst_address & 0xFF, &state->cpu.data, system->config.client_data);
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_OAM, NES_MEMORY_OP_WRITE, state->oam_dma_dst_address & 0xFF, &state->cpu.data);
 
         state->ppu.primary_oam.bytes[(state->oam_dma_dst_address++) & 0xFF] = state->cpu.data;
     }
@@ -122,8 +160,7 @@ static int dmc_dma_execute(nes_system* system)
         state->apu.dmc.sample_buffer = state->ram[state->dmc_dma_src_address & 0x7FF];
     }
 
-    if (system->config.memory_callback)
-        system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_READ_DMA, state->dmc_dma_src_address, &state->apu.dmc.sample_buffer, system->config.client_data);
+    execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_READ_DMA, state->dmc_dma_src_address, &state->apu.dmc.sample_buffer);
 
     state->apu.dmc.sample_buffer_loaded = 1;
     state->apu.dmc.bytes_remaining--;
@@ -179,13 +216,11 @@ static void ppu_mem_rw(nes_system* system)
             state->ppu.vram_data = state->vram[address];
         }
 
-        if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_PPU, NES_MEMORY_OP_READ, state->ppu.vram_address, &state->ppu.vram_data, system->config.client_data);
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_PPU, NES_MEMORY_OP_READ, state->ppu.vram_address, &state->ppu.vram_data);
     }
     else
     {
-        if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_PPU, NES_MEMORY_OP_WRITE, state->ppu.vram_address, &state->ppu.vram_data, system->config.client_data);
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_PPU, NES_MEMORY_OP_WRITE, state->ppu.vram_address, &state->ppu.vram_data);
 
         if (address < 0x2000)
         {
@@ -211,14 +246,11 @@ static void ppu_cpu_bus(nes_system* system)
         state->cpu.data = state->ppu.reg_data;
         state->cached_ppu_reg[reg_addr] = state->ppu.reg_data;
 
-        if (system->config.memory_callback)
-        {
-            nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data, system->config.client_data);
+        nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data);
 
-            if (reg_addr == NES_PPU_OAM_DATA_REG_ID)
-                system->config.memory_callback(NES_MEMORY_TYPE_OAM, read_op, state->ppu.oam_address, &state->ppu.reg_data, system->config.client_data);
-        }
+        if (reg_addr == NES_PPU_OAM_DATA_REG_ID)
+            execute_memory_callbacks(system, NES_MEMORY_TYPE_OAM, read_op, state->ppu.oam_address, &state->ppu.reg_data);
     }
 }
 
@@ -230,6 +262,8 @@ static void ppu_tick(nes_system* system)
 
     if (state->ppu.r | state->ppu.w)
         ppu_mem_rw(system);
+
+    execute_ppu_callbacks(system, &state->ppu);
 
     nes_ppu_execute(&state->ppu);
 
@@ -267,16 +301,12 @@ static void cpu_mem_rw(nes_system* system)
         else
             state->cpu.data = system->cartridge->mapper->read(system->cartridge, state->cpu.address);
 
-        if (system->config.memory_callback)
-        {
-            nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data, system->config.client_data);
-        }
+        nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data);
     }
     else if (state->cpu.rw_mode == CPU_RW_MODE_WRITE)
     {
-        if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data, system->config.client_data);
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data);
 
         if (is_ram)
             state->ram[state->cpu.address & 0x7FF] = state->cpu.data;
@@ -302,13 +332,10 @@ static void cpu_ppu_bus(nes_system* system)
     }
     else if (state->cpu.rw_mode == CPU_RW_MODE_WRITE)
     {
-        if (system->config.memory_callback)
-        {
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data, system->config.client_data);
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data);
 
-            if (reg_addr == NES_PPU_OAM_DATA_REG_ID)
-                system->config.memory_callback(NES_MEMORY_TYPE_OAM, NES_MEMORY_OP_WRITE, state->ppu.oam_address, &state->cpu.data, system->config.client_data);
-        }
+        if (reg_addr == NES_PPU_OAM_DATA_REG_ID)
+            execute_memory_callbacks(system, NES_MEMORY_TYPE_OAM, NES_MEMORY_OP_WRITE, state->ppu.oam_address, &state->cpu.data);
 
         state->ppu.reg_rw_mode = NES_PPU_REG_RW_MODE_WRITE;
         state->ppu.reg_addr = reg_addr;
@@ -334,8 +361,7 @@ static void cpu_apu_bus(nes_system* system)
         if (!is_apu_reg)
             return;
 
-        if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data, system->config.client_data);
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data);
 
         state->apu.reg_rw_mode = NES_APU_REG_RW_MODE_WRITE;
         state->apu.reg_addr = state->cpu.address;
@@ -359,17 +385,13 @@ static void cpu_joy_bus(nes_system* system)
 
             state->cached_apuio_reg[state->cpu.address & 0x1F] = state->cpu.data;
 
-            if (system->config.memory_callback)
-            {
-                nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
-                system->config.memory_callback(NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data, system->config.client_data);
-            }
+            nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
+            execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data);
         }
     }
     else if (state->cpu.rw_mode == CPU_RW_MODE_WRITE && state->cpu.address == 0x4016)
     {
-        if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data, system->config.client_data);
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data);
 
         if (state->cpu.data == 1)
         {
@@ -395,8 +417,7 @@ static void cpu_oam_dma_bus(nes_system* system)
 
     if (state->cpu.rw_mode == CPU_RW_MODE_WRITE && state->cpu.address == 0x4014)
     {
-        if (system->config.memory_callback)
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data, system->config.client_data);
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, NES_MEMORY_OP_WRITE, state->cpu.address, &state->cpu.data);
 
         state->cached_apuio_reg[state->cpu.address & 0x1F] = state->cpu.data;
         oam_dma_init(system, state->cpu.data, state->ppu.oam_address);
@@ -407,8 +428,8 @@ static void cpu_tick(nes_system* system)
 {
     nes_system_state* state = &system->state;
 
-    if (system->config.cpu_callback && (uint8_t)state->cpu.cycle == 0 && !state->cpu.halted)
-        system->config.cpu_callback(state->cpu.address, &state->cpu, system->config.client_data);
+    if (!state->cpu.halted)
+        execute_cpu_callbacks(system, &state->cpu);
 
     state->cpu = cpu_execute(state->cpu);
 
@@ -435,17 +456,16 @@ static void apu_cpu_bus(nes_system* system)
         state->cpu.data = state->apu.reg_data;
         state->cached_apuio_reg[0x15] = state->cpu.data;
 
-        if (system->config.memory_callback)
-        {
-            nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
-            system->config.memory_callback(NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data, system->config.client_data);
-        }
+        nes_memory_op read_op = (state->oam_dma || state->dmc_dma) ? NES_MEMORY_OP_READ_DMA : NES_MEMORY_OP_READ;
+        execute_memory_callbacks(system, NES_MEMORY_TYPE_CPU, read_op, state->cpu.address, &state->cpu.data);
     }
 }
 
 static void apu_tick(nes_system* system)
 {
     nes_system_state* state = &system->state;
+
+    execute_apu_callbacks(system, &state->apu);
 
     nes_apu_execute(&state->apu);
 
