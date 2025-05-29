@@ -44,14 +44,19 @@ inline void audio_resampler_begin(audio_resampler* resampler, uint32_t src_sampl
     float RC = 1.0f / (resampler->info.dst_sample_rate * 2 * M_PI);
     resampler->high_pass_alpha = dt / (RC + dt);
 
-    resampler->sample_step = resampler->sample_step_adjustment + 
-        (float)resampler->info.dst_sample_rate / (float)src_sample_rate;
+    resampler->sample_step = (float)resampler->info.dst_sample_rate / (float)src_sample_rate;
+}
+
+inline float interpolate(float a, float b, float t)
+{
+    return (1.0f - t) * a + t * b;
 }
 
 inline int audio_resampler_process_sample(audio_resampler* resampler, int16_t sample, int queue_size)
 {
     resampler->output_sample += resampler->high_pass_alpha * (sample - resampler->output_sample);
-    resampler->sample_pos += resampler->sample_step;
+
+    resampler->sample_pos += resampler->sample_step + resampler->sample_step_adjustment;
 
     if (resampler->sample_pos >= 1.0f)
     {
@@ -62,9 +67,15 @@ inline int audio_resampler_process_sample(audio_resampler* resampler, int16_t sa
         {
             resampler->sample_ptr = (int16_t*)resampler->info.dst_buffer;
 
-            if (queue_size > 7)       resampler->sample_step_adjustment = -0.0001f;
-            else if (queue_size < 4)  resampler->sample_step_adjustment = 0.0001f;
-            else                      resampler->sample_step_adjustment = 0.0f;
+            float target_adjustment = 0.00005f;
+            if (queue_size > 6)       target_adjustment = -0.0001f;
+            else if (queue_size < 4)  target_adjustment = 0.0001f;
+            else                      target_adjustment = 0.00005f;
+
+            float current_adjustment = resampler->sample_step_adjustment;
+            float t = 0.05f;
+
+            resampler->sample_step_adjustment =  (1.0f - t)*current_adjustment + t*target_adjustment;
 
             return 1;
         }

@@ -291,7 +291,7 @@ int main(int argc, char** argv)
     init_palette(pal_path);
 
     audio_resampler_info resampler_info;
-    resampler_info.dst_buffer_size  = sizeof(int16_t) * 512;
+    resampler_info.dst_buffer_size  = sizeof(int16_t) * 441;
     resampler_info.dst_buffer       = malloc(resampler_info.dst_buffer_size);
     resampler_info.dst_sample_rate  = SAMPLE_RATE;
 
@@ -345,7 +345,6 @@ int main(int argc, char** argv)
     {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to open audio device: %s\n", SDL_GetError());
     }
-    SDL_PauseAudioDevice(audio_device_id, 0);
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, TEXTURE_WIDTH, TEXTURE_HEIGHT);
@@ -360,6 +359,12 @@ int main(int argc, char** argv)
     memset(&controller, 0, 2 * sizeof(SDL_GameController*));
 
     SDL_ShowWindow(wnd);
+
+    memset(resampler.info.dst_buffer, 0, resampler.info.dst_buffer_size);
+    for (uint32_t i = 0; i < 20; ++i)
+        SDL_QueueAudio(audio_device_id, resampler.info.dst_buffer, resampler.info.dst_buffer_size);
+
+    SDL_PauseAudioDevice(audio_device_id, 0);
 
     while(!quit)
     {
@@ -419,7 +424,7 @@ int main(int argc, char** argv)
         while(frame_time < 1666)
         {
            frame_time  = ((SDL_GetPerformanceCounter() - begin_frame)*100000)/SDL_GetPerformanceFrequency();
-           if (frame_time < 1666 && (1666 - frame_time) > 100)
+           if (frame_time < 1666 && (1666 - frame_time) > 1000)
                SDL_Delay(1);
         }
     }
