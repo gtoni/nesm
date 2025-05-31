@@ -56,8 +56,10 @@ enum cpu_status_flags
 #define _CPU_SET_REG_Y(cpu, v)        _CPU_SET_REG(cpu, Y, v)
 #define _CPU_SET_REG_S(cpu, v)        cpu.S = v
 
-#define _CPU_SET_INSTRUCTION(cpu, i)   (cpu.cycle = (cpu.cycle & 0x00FF) | (i << 8))
+#define _CPU_SET_INSTRUCTION(cpu, i)   (cpu.cycle = (cpu.cycle & 0x00FF) | ((i) << 8))
 #define _CPU_GET_INSTRUCTION(cpu)      ((cpu.cycle >> 8) & 0xFF)
+#define _CPU_SET_CYCLE(cpu, i)         (cpu.cycle = (cpu.cycle & 0xFF00) | ((i) & 0x00FF))
+#define _CPU_GET_CYCLE(cpu)            (cpu.cycle & 0x00FF)
 
 #define _CPU_COND_BRANCH(cpu, cond) if (cond) {\
     cpu.address = cpu.PC + (int8_t)cpu.data;\
@@ -255,8 +257,10 @@ static cpu_state cpu_execute(cpu_state state)
     if (state.nmi_phase0 == 0 && state.nmi)
         state.nmi_phase0 = 1;
 
-    uint8_t cycle = (uint8_t)state.cycle++;
+    uint8_t cycle = _CPU_GET_CYCLE(state);
     uint_fast32_t instruction = _CPU_GET_INSTRUCTION(state);
+
+    _CPU_SET_CYCLE(state, cycle + 1);
 
     if (cycle == 0)
     {

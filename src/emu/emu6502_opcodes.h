@@ -30,21 +30,21 @@
 
 #define IC_NOP      0xEA
 
-#define IC_BCC      0x90
-#define IC_BCS      0xB0
-#define IC_BNE      0xD0
-#define IC_BEQ      0xF0
-#define IC_BVC      0x50
-#define IC_BVS      0x70
-#define IC_BPL      0x10
-#define IC_BMI      0x30
+#define IC_BCC      0x90        // Branch if FLAG_CARRY == 0
+#define IC_BCS      0xB0        // Branch if FLAG_CARRY == 1
+#define IC_BNE      0xD0        // Branch if FLAG_ZERO == 0
+#define IC_BEQ      0xF0        // Branch if FLAG_ZERO == 1
+#define IC_BVC      0x50        // Branch if FLAG_OVERFLOW == 0
+#define IC_BVS      0x70        // Branch if FLAG_OVERFLOW == 1
+#define IC_BPL      0x10        // Branch if FLAG_NEGATIVE == 0
+#define IC_BMI      0x30        // Branch if FLAG_NEGATIVE == 1
 
 #define IC_JMP      0x4C
 #define IC_JMP_IND  0x6C
 
 #define IC_BIT_ABS  0x2C
 #define IC_BIT_ZP   0x24
-#define IC_LDA_IMM      0xA9
+#define IC_LDA_IMM      0xA9    // A = value; FLAG_ZERO = (A == 0); FLAG_NEGATIVE = (A >> 7)
 #define IC_LDA_ABS      0xAD
 #define IC_LDA_ABS_X    0xBD
 #define IC_LDA_ABS_Y    0xB9
@@ -114,7 +114,7 @@
 #define IC_LSR_ZP_X     0x56
 #define IC_LSR_ACC      0x4A
 
-#define IC_AND_IMM      0x29
+#define IC_AND_IMM      0x29    // A = A & value; FLAG_ZERO = (A == 0); FLAG_NEGATIVE = (A >> 7)
 #define IC_AND_ABS      0x2D
 #define IC_AND_ABS_X    0x3D
 #define IC_AND_ABS_Y    0x39
@@ -122,7 +122,7 @@
 #define IC_AND_ZP_X     0x35
 #define IC_AND_IND_X    0x21
 #define IC_AND_IND_Y    0x31
-#define IC_ORA_IMM      0x09
+#define IC_ORA_IMM      0x09    // A = A | value; FLAG_ZERO = (A == 0); FLAG_NEGATIVE = (A >> 7)
 #define IC_ORA_ABS      0x0D
 #define IC_ORA_ABS_X    0x1D
 #define IC_ORA_ABS_Y    0x19
@@ -130,7 +130,7 @@
 #define IC_ORA_ZP_X     0x15
 #define IC_ORA_IND_X    0x01
 #define IC_ORA_IND_Y    0x11
-#define IC_EOR_IMM      0x49
+#define IC_EOR_IMM      0x49    // A = A ^ value; FLAG_ZERO = (A == 0); FLAG_NEGATIVE = (A >> 7)
 #define IC_EOR_ABS      0x4D
 #define IC_EOR_ABS_X    0x5D
 #define IC_EOR_ABS_Y    0x59
@@ -156,7 +156,7 @@
 #define IC_SBC_IND_X    0xE1
 #define IC_SBC_IND_Y    0xF1
 
-#define IC_CMP_IMM      0xC9
+#define IC_CMP_IMM      0xC9    //FLAG_CARRY = (A >= value); FLAG_ZERO = (A == value); FLAG_NEGATIVE = (A - value) >> 7
 #define IC_CMP_ABS      0xCD
 #define IC_CMP_ABS_X    0xDD
 #define IC_CMP_ABS_Y    0xD9

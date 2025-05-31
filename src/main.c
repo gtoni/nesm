@@ -6,6 +6,7 @@
 #include <assert.h>
 #include "emu/nes_system.h"
 #include "emu-utils/audio_resampler.h"
+#include "emu-utils/audio_clip.h"
 
 #define TEXTURE_WIDTH   256
 #define TEXTURE_HEIGHT  224
@@ -24,6 +25,8 @@ SDL_GameController* controller[2];
 SDL_AudioDeviceID   audio_device_id;
 
 audio_resampler     resampler;
+
+audio_clip_layer_t  audio_clip_layer;
 
 char                save_path[1024];
 void*               state_buffer = 0;
@@ -274,6 +277,7 @@ int main(int argc, char** argv)
 {
     const char*     pal_path = 0;
     const char*     rom_path = "rom.nes";
+    const char*     ac_path = 0;
     char            title[256];
     int             quit = 0;
     nes_config      config;
@@ -284,6 +288,8 @@ int main(int argc, char** argv)
     {
         if (strcmp(argv[i], "-pal") == 0 && ++i < argc)
             pal_path = argv[i];
+        else if (strcmp(argv[i], "-record-audio") == 0 && ++i < argc)
+            ac_path = argv[i];
         else
             rom_path = argv[i];
     }
@@ -307,6 +313,15 @@ int main(int argc, char** argv)
     config.input_callback = &on_nes_input;
     config.video_callback = &on_nes_video;
     config.audio_callback = &on_nes_audio;
+
+    audio_clip_layer_init(&audio_clip_layer);
+
+    if (ac_path != 0)
+    {
+        puts("Recording audio");
+        config.layer = (nes_system_layer*)&audio_clip_layer;
+        audio_clip_layer_begin_record(&audio_clip_layer);
+    }
 
     system = nes_system_create(&config);
     if (!system)
@@ -423,6 +438,16 @@ int main(int argc, char** argv)
                SDL_Delay(1);
         }
     }
+
+    if (audio_clip_layer_is_recording(&audio_clip_layer))
+    {
+        audio_clip_layer_end_record(&audio_clip_layer);
+
+        if (audio_clip_save_to_file(audio_clip_layer.audio_clip, ac_path))
+            printf("Audio clip saved to: %s\n", ac_path);
+    }
+
+    audio_clip_layer_cleanup(&audio_clip_layer);
 
     SDL_DestroyWindow(wnd);
     if (audio_device_id >= 0)
