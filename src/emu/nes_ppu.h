@@ -155,6 +155,7 @@ typedef struct nes_ppu
 
     uint8_t         sprite_0_test;
     uint8_t         cpu_read_buffer;
+    uint8_t         cpu_read_buffer_latency;
     int             update_cpu_read_buffer;
 
     uint8_t         pre_vblank;
@@ -241,6 +242,9 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
 
     // I/O:
 
+    if (ppu->cpu_read_buffer_latency)
+        ppu->cpu_read_buffer_latency--;
+
     if (ppu->r | ppu->w)
     {
         if (!_NES_PPU_IS_RENDERING(ppu))
@@ -249,6 +253,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
         if (ppu->update_cpu_read_buffer)
         {
             ppu->cpu_read_buffer = ppu->vram_data;
+            ppu->cpu_read_buffer_latency = 3;
             ppu->update_cpu_read_buffer = 0;
         }
         ppu->r = ppu->w = 0;
@@ -385,7 +390,8 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                     else
                     {
                         ppu->r = 1;
-                        ppu->reg_data = ppu->cpu_read_buffer;
+                        if (!ppu->cpu_read_buffer_latency)
+                            ppu->reg_data = ppu->cpu_read_buffer;
                         ppu->update_cpu_read_buffer = 1;
                         open_bus_refresh_bits = 0xFF;
                     }

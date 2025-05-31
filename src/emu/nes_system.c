@@ -149,7 +149,15 @@ static int dmc_dma_execute(nes_system* system)
         is_dmc_dma_cycle = 0; // realign cycle
 
     if (!is_dmc_dma_cycle)
-        return state->oam_dma ? oam_dma_execute(system) : 1;
+    {
+        if (state->oam_dma)
+            return oam_dma_execute(system);
+
+        if (state->cpu.address == 0x4016 || state->cpu.address == 0x4017)
+            return 0;
+
+        return 1;
+    }
 
     if (state->dmc_dma_src_address >= 0x6000)
     {
