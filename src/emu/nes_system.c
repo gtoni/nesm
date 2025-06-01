@@ -16,9 +16,9 @@ typedef struct nes_system_state
     nes_ppu     ppu;
     nes_apu     apu;
     int         cpu_odd_cycle;
+    uint16_t    cpu_next_address;
     int         oam_dma;
     int         oam_dma_cycle;
-    uint16_t    oam_dma_cpu_address;
     uint16_t    oam_dma_src_address;
     uint8_t     oam_dma_dst_address;
     int         dmc_dma;
@@ -26,6 +26,7 @@ typedef struct nes_system_state
     uint16_t    dmc_dma_src_address;
     uint8_t     controller_input0;
     uint8_t     controller_input1;
+    uint8_t     controller_read_timer0;
     uint8_t     ram[0x800];
     uint8_t     vram[0x2000];
     uint8_t     chr_ram[0x2000];
@@ -101,9 +102,6 @@ static int oam_dma_execute(nes_system* system)
     int cycle = state->oam_dma_cycle;
     int put_cycle = (cycle & 1);
 
-    if (cycle)  state->cpu.address = state->oam_dma_cpu_address;
-    else        state->oam_dma_cpu_address = state->cpu.address;
-    
     if (state->cpu_odd_cycle != put_cycle)
         return 1; // realign cycle
 
@@ -153,9 +151,6 @@ static int dmc_dma_execute(nes_system* system)
         if (state->oam_dma)
             return oam_dma_execute(system);
 
-        if (state->cpu.address == 0x4016 || state->cpu.address == 0x4017)
-            return 0;
-
         return 1;
     }
 
@@ -188,6 +183,14 @@ static int dmc_dma_execute(nes_system* system)
     }
 
     state->dmc_dma = 0;
+
+    // Emulate bus conflict behavior
+    uint16_t conflict_address = (state->cpu.address & 0xFFE0) | (state->dmc_dma_src_address & 0x1F);
+    if (conflict_address == 0x4015 || conflict_address == 0x4016 || conflict_address == 0x4017)
+    {
+        state->cpu.address = conflict_address;
+        return 1;
+    }
 
     return 0;
 }
@@ -389,7 +392,11 @@ static void cpu_joy_bus(nes_system* system)
             uint8_t input = (state->controller_input0 >> 7) & 1;
 
             state->cpu.data = (state->cpu.data & 0xE0) | (input & 0x1F);
-            state->controller_input0 = (state->controller_input0 << 1) | 1;
+
+            if (state->controller_read_timer0 == 0)
+                state->controller_input0 = (state->controller_input0 << 1) | 1;
+
+            state->controller_read_timer0 = 2;
 
             state->cached_apuio_reg[state->cpu.address & 0x1F] = state->cpu.data;
 
@@ -436,10 +443,12 @@ static void cpu_tick(nes_system* system)
 {
     nes_system_state* state = &system->state;
 
+    state->cpu.address = state->cpu_next_address; // DMA may have hijacked the address, restore it
     if (!state->cpu.halted)
         execute_cpu_callbacks(system, &state->cpu);
 
     state->cpu = cpu_execute(state->cpu);
+    state->cpu_next_address = state->cpu.address;
 
     state->cpu.rdy = !(state->dmc_dma || state->oam_dma);
 
@@ -451,6 +460,8 @@ static void cpu_tick(nes_system* system)
         cpu_joy_bus(system);
         cpu_oam_dma_bus(system);
     }
+
+    state->controller_read_timer0 >>= 1;
 
     state->cpu_odd_cycle ^= 1; 
 }
