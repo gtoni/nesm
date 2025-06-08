@@ -251,7 +251,7 @@ void handle_shortcut_key(nes_system* system, SDL_Scancode key)
         }
         else if (key == SDL_SCANCODE_R)
         {
-            nes_system_reset(system);
+            nes_system_reset(system, NES_SYSTEM_RESET);
         }
     }
 }

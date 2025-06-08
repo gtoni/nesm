@@ -159,10 +159,17 @@ typedef struct nes_apu
     uint32_t    cycle;
 } nes_apu;
 
-static void nes_apu_reset(nes_apu* apu)
+static void nes_apu_power_up(nes_apu* apu)
 {
     memset(apu, 0, sizeof(nes_apu));
     apu->noise.shift_register = 1;
+    apu->cycle = 1;
+}
+
+static void nes_apu_reset(nes_apu* apu)
+{
+    apu->channel_enable.b = 0;
+    apu->frame_interrupt = 0;
     apu->cycle = 1;
 }
 

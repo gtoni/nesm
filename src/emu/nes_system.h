@@ -69,6 +69,12 @@ typedef enum nes_memory_op
 #define NES_MEMORY_SIZE_PPU 0x4000
 #define NES_MEMORY_SIZE_OAM 0x100
 
+typedef enum nes_system_reset_type
+{
+    NES_SYSTEM_RESET,
+    NES_SYSTEM_RESET_POWER_UP
+} nes_system_reset_type;
+
 typedef enum nes_source_type
 {
     NES_SOURCE_FILE,
@@ -114,7 +120,7 @@ typedef struct nes_system nes_system;
 
 nes_system* nes_system_create(nes_config* config);
 void        nes_system_destroy(nes_system* system);
-void        nes_system_reset(nes_system* system);
+void        nes_system_reset(nes_system* system, nes_system_reset_type reset_type);
 
 size_t      nes_system_get_state_size(nes_system* system);
 int         nes_system_save_state(nes_system* system, void* buffer, size_t buffer_size);

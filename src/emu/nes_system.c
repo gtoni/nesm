@@ -535,7 +535,7 @@ nes_system* nes_system_create(nes_config* config)
     system->cartridge   = cartridge;
     system->config      = *config;
 
-    nes_system_reset(system);
+    nes_system_reset(system, NES_SYSTEM_RESET_POWER_UP);
 
     return system;
 }
@@ -548,13 +548,26 @@ void nes_system_destroy(nes_system* system)
     free(system);
 }
 
-void nes_system_reset(nes_system* system)
+void nes_system_reset(nes_system* system, nes_system_reset_type reset_type)
 {
     nes_system_state* state = &system->state;
 
+    if (reset_type == NES_SYSTEM_RESET_POWER_UP)
+    {
+        state->cpu = cpu_power_up();
+
+        for (uint32_t i = 0; i < 0x800; ++i)
+            system->state.ram[i] = (uint8_t)rand();
+
+        nes_apu_power_up(&system->state.apu);
+    }
+    else
+    {
+        state->cpu = cpu_reset(state->cpu);
+        nes_apu_reset(&state->apu);
+    }
+
     nes_ppu_reset(&state->ppu);
-    nes_apu_reset(&state->apu);
-    state->cpu = cpu_reset();
     state->cpu_odd_cycle = 1;
     state->dmc_dma = 0;
     state->oam_dma = 0;
@@ -563,9 +576,6 @@ void nes_system_reset(nes_system* system)
     state->oam_dma_dst_address = 0;
     state->controller_input0 = 0;
     state->controller_input1 = 1;
-
-    for (uint32_t i = 0; i < 0x800; ++i)
-        state->ram[i] = (uint8_t)rand();
 }
 
 size_t nes_system_get_state_size(nes_system *system)

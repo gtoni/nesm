@@ -226,17 +226,21 @@ enum cpu_status_flags
         state.address = (state.address & 0xFF) | ((uint16_t)state.data << 8);\
 }
 
-static cpu_state cpu_reset()
+static cpu_state cpu_reset(cpu_state state)
 {
-    cpu_state state;
-    memset(&state, 0, sizeof(cpu_state));
-    _CPU_SET_REG_P(state, CPU_STATUS_FLAG_IRQDISABLE);
+    _CPU_SET_REG_P(state, state.P | CPU_STATUS_FLAG_IRQDISABLE);
     state.rdy = 1;
-    state.S = 0;
     state.temp = 0xFC;
     state.cycle = 0;
     state.data = 0;
     return state; 
+}
+
+static cpu_state cpu_power_up()
+{
+    cpu_state state;
+    memset(&state, 0, sizeof(cpu_state));
+    return cpu_reset(state);
 }
 
 static cpu_state cpu_execute(cpu_state state)
@@ -376,7 +380,8 @@ static cpu_state cpu_execute(cpu_state state)
         switch (instruction)
         {
             case IC_BRK:
-                state.rw_mode = CPU_RW_MODE_WRITE;
+                if (state.temp != 0xFC)
+                    state.rw_mode = CPU_RW_MODE_WRITE;
                 state.data = state.PC >> 8;
                 state.address = ((uint8_t)state.S--) + 0x0100;
                 return state;
