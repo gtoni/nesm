@@ -248,7 +248,7 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
     if (ppu->r | ppu->w)
     {
         if (!_NES_PPU_IS_RENDERING(ppu))
-            ppu->vram_address += ppu->ctrl.vram_rw_increment_step ? 32 : 1;
+            ppu->v_addr_reg += ppu->ctrl.vram_rw_increment_step ? 32 : 1;
 
         if (ppu->update_cpu_read_buffer)
         {
@@ -259,9 +259,9 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
         ppu->r = ppu->w = 0;
     }
 
-    if (ppu->vram_address >= 0x3F00 && ppu->vram_address <= 0x3FFF)
+    if (ppu->v_addr_reg >= 0x3F00 && ppu->v_addr_reg <= 0x3FFF)
     {
-        palette_index = ppu->vram_address & 0x1F;
+        palette_index = ppu->v_addr_reg & 0x1F;
         if ((palette_index & 0x13) == 0x10)
             palette_index &= ~0x10;
     }
@@ -320,7 +320,23 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                 }
                 else
                 {
-                    ppu->reg_data = ppu->primary_oam.bytes[ppu->oam_address];
+                    if (_NES_PPU_IS_RENDERING(ppu))
+                    {
+                        if (ppu->dot >= 257 && ppu->dot <= 320)
+                        {
+                            uint32_t fetch_cycle  = (ppu->dot - 257) & 7;
+                            uint32_t byte_index = (((ppu->dot - 257) >> 1) & 0xFC) + (fetch_cycle < 4 ? fetch_cycle : 3);
+                            ppu->reg_data = ppu->secondary_oam.bytes[byte_index];
+                        }
+                        else
+                        {
+                            ppu->reg_data = ppu->eval_oam_entry_data;
+                        }
+                    }
+                    else
+                    {
+                        ppu->reg_data = ppu->primary_oam.bytes[ppu->oam_address];
+                    }
                     open_bus_refresh_bits = 0xFF;
                 }
             }
@@ -351,11 +367,10 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
                     {
                         ppu->t_addr_reg = (ppu->t_addr_reg & 0xFF00) | ppu->reg_data;
                         ppu->v_addr_reg = ppu->t_addr_reg;
-                        ppu->vram_address = ppu->t_addr_reg;
                     }
                     else
                     {
-                        ppu->t_addr_reg = ((ppu->reg_data & 0x3F) << 8) | (ppu->vram_address & 0x00FF);
+                        ppu->t_addr_reg = ((ppu->reg_data & 0x3F) << 8) | (ppu->v_addr_reg & 0x00FF);
                     }
                     ppu->write_toggle = !ppu->write_toggle;
                 }
@@ -363,14 +378,14 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
             break;
             case NES_PPU_DATA_REG_ID: // read-write
             {
-                if (ppu->vram_address >= 0x3F00 && ppu->vram_address <= 0x3FFF)
+                if (ppu->v_addr_reg >= 0x3F00 && ppu->v_addr_reg <= 0x3FFF)
                 {
                     if (ppu->reg_rw_mode == NES_PPU_REG_RW_MODE_WRITE)
                     {
                         ppu->palettes[palette_index] = ppu->reg_data & 0x3F;
 
                         if (!_NES_PPU_IS_RENDERING(ppu))
-                            ppu->vram_address += ppu->ctrl.vram_rw_increment_step ? 32 : 1;
+                            ppu->v_addr_reg += ppu->ctrl.vram_rw_increment_step ? 32 : 1;
                     }
                     else
                     {
@@ -465,7 +480,11 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
         ppu->render_mask = (nes_ppu_render_mask)((ppu->render_mask & NES_PPU_RENDER_MASK_RENDER) | (next_render_mask & ~NES_PPU_RENDER_MASK_RENDER));
     }
 
-    if (_NES_PPU_IS_RENDERING(ppu) && ppu->dot)
+    if (!_NES_PPU_IS_RENDERING(ppu))
+    {
+        ppu->vram_address = ppu->v_addr_reg;
+    }
+    else if (ppu->dot)
     {
         const unsigned sprite_height = 8 << ppu->ctrl.sprite_size;
 
@@ -668,6 +687,8 @@ static void nes_ppu_execute(nes_ppu* __restrict ppu)
 
                                 if (ppu->eval_oam_byte_count == 32)
                                     ppu->oam_address = (ppu->oam_address & 0xFC) | ((ppu->oam_address + 1) & 3);
+                                else
+                                    ppu->oam_address &= 0xFC;
                             }
                         }
                     }

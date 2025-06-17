@@ -27,7 +27,7 @@ struct ines_header
             uint8_t mirroring : 1;
             uint8_t battery_ram : 1;
             uint8_t has_trainer : 1;
-            uint8_t ignore_mirroring : 1;
+            uint8_t alternative_nametable_layout : 1;
             uint8_t mapper_low : 4;
         };
         uint8_t b;
@@ -72,23 +72,29 @@ static nes_cartridge* nes_rom_create_ines_cartridge(const void* rom_file, size_t
     struct ines_header* hdr = (struct ines_header*)rom_file;
     int mapper_id = ((hdr->flags7.mapper_high << 4) | hdr->flags6.mapper_low);
 
-    size_t cartridge_size = sizeof(nes_cartridge) + sizeof(nes_mapper);
-    cartridge_size += hdr->prg_rom_size * 16384;
-    cartridge_size += hdr->chr_rom_size * 8192;
+    uint32_t chr_ram_size = hdr->chr_rom_size ? 0 : 0x2000;
 
-    nes_mapper mapper = nes_mapper_get(mapper_id);
+    size_t cartridge_size = sizeof(nes_cartridge) + sizeof(nes_mapper);
+    cartridge_size += hdr->prg_rom_size * 0x4000;
+    cartridge_size += hdr->chr_rom_size * 0x2000;
+    cartridge_size += chr_ram_size;
+
+    nes_mapper mapper = nes_mapper_get(mapper_id, hdr->flags6.alternative_nametable_layout);
     cartridge_size += mapper.state_size;
 
     printf("PRG ROM: %d KB \tCHR ROM: %d KB\n", ((hdr->prg_rom_size * 16384)/1024), ((hdr->chr_rom_size * 8192)/1024));
     printf("mapper: %d\n", mapper_id);
 
     nes_cartridge* cartridge = (nes_cartridge*)malloc(cartridge_size);
+    cartridge->prg_rom_size = hdr->prg_rom_size * 0x4000;
+    cartridge->chr_rom_size = hdr->chr_rom_size * 0x2000;
+    cartridge->chr_ram_size = hdr->chr_rom_size ? 0 : 0x2000;
+    cartridge->state_size = mapper.state_size + cartridge->chr_ram_size;
     cartridge->mapper = (nes_mapper*)((uint8_t*)cartridge + sizeof(nes_cartridge));
-    cartridge->mapper_state = (uint8_t*)cartridge->mapper + sizeof(nes_mapper);
-    cartridge->prg_rom_size = hdr->prg_rom_size * 16384;
-    cartridge->chr_rom_size = hdr->chr_rom_size * 8192;
-    cartridge->prg_rom = (uint8_t*)cartridge->mapper_state + mapper.state_size;
+    cartridge->prg_rom = (uint8_t*)cartridge->mapper + sizeof(nes_mapper);
     cartridge->chr_rom = cartridge->prg_rom + cartridge->prg_rom_size;
+    cartridge->state   = cartridge->chr_rom + cartridge->chr_rom_size;
+    cartridge->chr_ram = (uint8_t*)cartridge->state + mapper.state_size;
 
     if (hdr->flags6.mirroring)
         cartridge->mirroring = NES_NAMETABLE_MIRRORING_VERTICAL;

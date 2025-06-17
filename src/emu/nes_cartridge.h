@@ -16,12 +16,15 @@ typedef struct nes_mapper nes_mapper;
 
 typedef struct nes_cartridge
 {
+    void*       state;
+    size_t      state_size;
     uint8_t*    prg_rom;
     size_t      prg_rom_size; 
     uint8_t*    chr_rom;
     size_t      chr_rom_size;
-    nes_mapper* mapper;
-    void*       mapper_state;
+    uint8_t*    chr_ram;
+    size_t      chr_ram_size;
+    nes_mapper*             mapper;
     nes_nametable_mirroring mirroring;
 } nes_cartridge;
 
