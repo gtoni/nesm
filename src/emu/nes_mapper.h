@@ -163,10 +163,10 @@ static void UxROM_init(nes_cartridge* cartridge)
     state->current_bank_offset = 0;
 
     size_t num_banks = cartridge->prg_rom_size / 0x4000;
-    if (num_banks < 16)
-        state->bank_mask = 0x07;
-    else
-        state->bank_mask = 0x0F;
+
+    if (num_banks < 8)          state->bank_mask = 0x03;
+    else if (num_banks < 16)    state->bank_mask = 0x07;
+    else                        state->bank_mask = 0x0F;
 }
 
 static void UxROM_read(nes_cartridge* cartridge, uint16_t address, uint8_t* out_data)
@@ -229,7 +229,7 @@ static uint16_t Mapper071_nametable_address(nes_cartridge* cartridge, uint16_t a
     }
     else
     {
-        return NROM_nametable_address(cartridge, address);
+        return ((address & 0x3FFF) - 0x2000) & 0x7FF;
     }
 }
 
